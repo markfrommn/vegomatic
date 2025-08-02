@@ -1,3 +1,24 @@
+# Exclude coverage
+test-reports
+
+# Exlude IDE related files
+.idea/*
+.vscode/*
+
+# pdoc3 HTML output
+html/
+
+# mypy caches
+/.*cache
+
+# Exlude built docs
+/docs/_build/
+/docs/autoapi/
+
+# # # #
+# copy from https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore
+# # # #
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -138,6 +159,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.venv/
 env/
 venv/
 ENV/
