@@ -1,13 +1,15 @@
 [project]
 name = "vegomatic"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = [
     {name = "Mark Gooderum",email = "3393412+markfrommn@users.noreply.github.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
+    "ciso8601 (>=2.3.2,<3.0.0)",
+    "mysql-connector-python (>=9.4.0,<10.0.0)"
 ]
 
 [tool.poetry]
