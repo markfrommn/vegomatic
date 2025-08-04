@@ -2,9 +2,9 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/src/vegomatic/datadb/datadb.iml" filepath="$PROJECT_DIR$/src/vegomatic/datadb/datadb.iml" />
       <module fileurl="file://$PROJECT_DIR$/src/vegomatic/datafile/datafile.iml" filepath="$PROJECT_DIR$/src/vegomatic/datafile/datafile.iml" />
       <module fileurl="file://$PROJECT_DIR$/src/vegomatic/datamap/datamap.iml" filepath="$PROJECT_DIR$/src/vegomatic/datamap/datamap.iml" />
+      <module fileurl="file://$PROJECT_DIR$/src/vegomatic/simpledb/simpledb.iml" filepath="$PROJECT_DIR$/src/vegomatic/simpledb/simpledb.iml" />
       <module fileurl="file://$PROJECT_DIR$/vegomatic.iml" filepath="$PROJECT_DIR$/vegomatic.iml" />
     </modules>
   </component>
