@@ -31,6 +31,7 @@ class GqlFetch:
     def __init__(
         self,
         endpoint: str,
+        token: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         use_async: bool = False,
         fetch_schema: bool = True,
@@ -47,41 +48,60 @@ class GqlFetch:
             timeout: Request timeout in seconds
         """
         self.endpoint = endpoint
+        self.token = token
         self.headers = headers or {}
+        if token is not None:
+            self.headers["Authorization"] = f"Bearer {token}"
         self.use_async = use_async
         self.timeout = timeout
-        
+        self.fetch_schema = fetch_schema
+        self.dsl_schema = None
+        self.transport = None
+        self.client = None
+
+    def connect(self):
+        """
+        Connect to the GraphQL endpoint.
+        """
         # Create transport
-        if use_async:
+        if self.use_async:
             self.transport = AIOHTTPTransport(
-                url=endpoint,
-                headers=headers,
-                timeout=timeout
+                url=self.endpoint,
+                headers=self.headers,
+                timeout=self.timeout
             )
         else:
             self.transport = RequestsHTTPTransport(
-                url=endpoint,
-                headers=headers,
-                timeout=timeout
+                url=self.endpoint,
+                headers=self.headers,
+                timeout=self.timeout
             )
         
         # Create client
         self.client = Client(
             transport=self.transport,
-            fetch_schema_from_transport=fetch_schema
+            fetch_schema_from_transport=self.fetch_schema
         )
-        
-        # DSL schema for query building
-        self.dsl_schema: Optional[DSLSchema] = None
+        if self.fetch_schema:
+            if not self.use_async:
+                # This only works with a sync connect
+                self.client.connect_sync()
+                self.client.session.fetch_schema()
+                self.dsl_schema = DSLSchema(self.client.schema)
+                self.client.close_sync()
+        return
     
-    def set_dsl_schema(self, schema: DSLSchema) -> None:
+    def set_dsl_schema(self, dsl_schema: DSLSchema = None) -> None:
         """
         Set the DSL schema for building queries dynamically.
         
         Args:
             schema: The DSL schema instance
         """
-        self.dsl_schema = schema
+        if dsl_schema is None:
+            self.dsl_schema = DSLSchema(self.client.schema)
+        else:
+            self.dsl_schema = dsl_schema
     
     def _extract_page_info(self, data: Dict[str, Any], page_info_path: str = "pageInfo") -> Optional[PageInfo]:
         """

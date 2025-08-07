@@ -3,5 +3,7 @@
 #
 
 from .gqlfetch import GqlFetch
+from .gqlfetch import PageInfo
 
-__all__ = ["GqlFetch"]
+
+__all__ = ["GqlFetch", "PageInfo"]

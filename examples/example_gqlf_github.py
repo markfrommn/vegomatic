@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Simple example demonstrating the GqlFetch module with a real GraphQL endpoint.
+Simple example demonstrating the GqlFetch module Github module.
 """
 
 import asyncio
-from vegomatic.gqlfetch import GqlFetch
+from vegomatic.gqlf-github import GqlFetchGithub
 from graphql import GraphQLSchema
 import pprint
 import dumper
@@ -23,20 +23,31 @@ def example_sync_fetch() -> GraphQLSchema:
     print("=== Synchronous Fetch Example ===")
 
     # Create a GqlFetch instance
-    client = GqlFetch(
-        endpoint="https://countries.trevorblades.com/",
+    client = GqlFetchGithub(
         use_async=False
     )
     client.connect()
 
     # Define a GraphQL query
     query = """
-    query getContinents {
-      continents {
-        code
-        name
-      }
-    }
+        query {
+            organization(login: "markfrommn") {
+                repositories(first: 100) { # 'first' limits the number of results per page
+                    totalCount
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                    nodes {
+                        name
+                        url
+                        isPrivate
+                        description
+                        # Add other repository fields you need
+                    }
+                }
+            }
+        }
     """
     dsl_schema = None
     try:
@@ -59,8 +70,7 @@ async def example_async_fetch() -> GraphQLSchema:
     print("\n=== Asynchronous Fetch Example ===")
 
     # Create an async GqlFetch instance
-    async with GqlFetch(
-        endpoint="https://countries.trevorblades.com/",
+    async with GqlFetchGithub(
         use_async=True
     ) as client:
         client.connect()
@@ -94,8 +104,7 @@ def example_data_extraction():
     """Example of data extraction from nested responses."""
     print("\n=== Data Extraction Example ===")
 
-    client = GqlFetch(
-        endpoint="https://countries.trevorblades.com/",
+    client = GqlFetchGithub(
         use_async=False
     )
     client.connect()
