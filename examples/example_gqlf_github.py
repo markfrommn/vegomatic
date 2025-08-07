@@ -4,7 +4,7 @@ Simple example demonstrating the GqlFetch module Github module.
 """
 
 import asyncio
-from vegomatic.gqlf-github import GqlFetchGithub
+from vegomatic.gqlf_github import GqlFetchGithub
 from graphql import GraphQLSchema
 import pprint
 import dumper
@@ -53,9 +53,9 @@ def example_sync_fetch() -> GraphQLSchema:
     try:
         # Fetch data
         result = client.fetch_data(query)
-        print("Continents:")
-        for continent in result.get('continents', []):
-            print(f"  - {continent['name']} ({continent['code']})")
+        print("Repositories:")
+        for repositories in result.get('repositories', []):
+            print(f"  - {repo['name']} ({repo['url']})")
         dsl_schema = client.dsl_schema._schema
 
     except Exception as e:
@@ -76,23 +76,35 @@ async def example_async_fetch() -> GraphQLSchema:
         client.connect()
         # Define a GraphQL query
         query = """
-        query getCountries {
-          countries {
-            code
-            name
-            capital
-          }
+        query {
+            organization(login: "markfrommn") {
+                repositories(first: 100) { # 'first' limits the number of results per page
+                    totalCount
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                    nodes {
+                        name
+                        url
+                        isPrivate
+                        description
+                        # Add other repository fields you need
+                    }
+                }
+            }
         }
         """
         dsl_schema = None
         try:
             # Fetch data asynchronously
             result = await client.fetch_data_async(query)
-            print("Countries (first 5):")
-            for country in result.get('countries', [])[:5]:
-                capital = country.get('capital', 'N/A')
+            print("Repositories (first 5):")
+            for repository in result.get('repositories', [])[:5]:
+                name = repository.get('name', 'N/A')
+                url = repository.get('url', 'N/A')
                 print(
-                    f"  - {country['name']} ({country['code']}) - Capital: {capital}")
+                    f"  - {name} ({url})")
             # dsl_schema = client.dsl_schema._schema
 
         except Exception as e:
@@ -110,14 +122,27 @@ def example_data_extraction():
     client.connect()
 
     query = """
-    query getCountryData {
-      countries {
-        code
-        name
-        continent {
-          name
+    query {
+        organization(login: "markfrommn") {
+            repositories(first: 10) { # 'first' limits the number of results per page
+                pullRequests(first: 10, orderBy: { field: CREATED_AT, direction: DESC }) {
+                    nodes {
+                        number
+                        title
+                        state
+                        author {
+                            login
+                        }
+                        createdAt
+                        mergedAt
+                    }
+                }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
+            }
         }
-      }
     }
     """
 
@@ -125,14 +150,15 @@ def example_data_extraction():
         # Extract only the countries array
         countries = client.fetch_data(
             query,
-            extract_path="countries"
+            extract_path="repositories"
         )
 
-        print("Countries with continents:")
-        for country in countries[:5]:  # Show first 5
-            continent = country.get('continent', {}).get('name', 'Unknown')
+        print("Repositories with PRs:")
+        for repository in repositories[:5]:  # Show first 5
+            name = repository.get('name', 'Unknown')
+            url = repository.get('url', 'Unknown')
             print(
-                f"  - {country['name']} ({country['code']}) - Continent: {continent}")
+                f"  - {name} ({url})")
 
     except Exception as e:
         print(f"Error: {e}")

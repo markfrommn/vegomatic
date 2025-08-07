@@ -2,9 +2,9 @@
 GqlFetch-github module for fetching data from the Github GraphQL endpoint with pagination support.
 """
 
-from .gqlfetch import GqlFetch
+from typing import Any, Dict, List, Optional, Union, Iterator
 
-
+from vegomatic.gqlfetch import GqlFetch
 class GqlFetchGithub(GqlFetch):
     """
     A GraphQL client for fetching data from the Github GraphQL endpoint with pagination support.

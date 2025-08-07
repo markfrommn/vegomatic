@@ -2,7 +2,6 @@
 # GqlFetch module for Github GraphQL API
 #
 
-from .gqlf-github import GqlFetchGithub
-
+from .gqlfetch_github import GqlFetchGithub
 
 __all__ = ["GqlFetchGithub"]

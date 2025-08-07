@@ -9,7 +9,7 @@ from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 from gql.transport.requests import RequestsHTTPTransport
 from gql.dsl import DSLSchema, DSLQuery, DSLField, DSLFragment, DSLInlineFragment
-
+import os
 
 @dataclass
 class PageInfo:
@@ -49,9 +49,11 @@ class GqlFetch:
         """
         self.endpoint = endpoint
         self.token = token
+        if self.token is None:
+            self.token = os.getenv("GRAPHQL_TOKEN", default=None)
         self.headers = headers or {}
-        if token is not None:
-            self.headers["Authorization"] = f"Bearer {token}"
+        if self.token is not None:
+            self.headers["Authorization"] = f"Bearer {self.token}"
         self.use_async = use_async
         self.timeout = timeout
         self.fetch_schema = fetch_schema
