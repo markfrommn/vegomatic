@@ -35,7 +35,7 @@ A simple set of routines to get sstructured data to/from text files.
 A datamapping module that maps datasets using data driven field mapping including simple field names, custom translation, etc.
 
 ### gqlfetch
-A mid-level library to fetch object from a GraphQL API using a derivable class with API specific templates for queries and paginations.
+A high-level GraphQL client library that provides easy data fetching from GraphQL endpoints with support for pagination, async operations, and optional DSL query building. Features include cursor-based pagination, flexible data extraction, and context manager support.
 
 ### gqlf-modules
 Example modules for gqlfetch.  These will likely move into their own repository at some point.

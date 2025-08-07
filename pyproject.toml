@@ -10,7 +10,8 @@ requires-python = ">=3.9"
 dependencies = [
     "ciso8601 (>=2.3.2,<3.0.0)",
     "mysql-connector-python (>=9.4.0,<10.0.0)",
-    "pydal (>=20250629.2,<20250630.0)"
+    "pydal (>=20250629.2,<20250630.0)",
+    "gql[all] (>=3.5.0,<4.0.0)"
 ]
 
 [tool.poetry]
