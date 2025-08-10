@@ -123,9 +123,10 @@ def example_data_extraction():
 
     query = """
     query {
-        organization(login: "markfrommn") {
+        owner(login: "{owner}") {
             repositories(first: 10) { # 'first' limits the number of results per page
-                pullRequests(first: 10, orderBy: { field: CREATED_AT, direction: DESC }) {
+            
+                pullRequests(first: [], orderBy: { field: CREATED_AT, direction: DESC }) {
                     nodes {
                         number
                         title
