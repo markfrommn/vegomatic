@@ -68,6 +68,60 @@ class GqlFetchGithub(GqlFetch):
                         author {
                             login
                         }
+                        comments (<CIR_ARGS>) {
+                            totalCount
+                            nodes {
+                                url
+                                body
+                                createdAt
+                                updatedAt
+                                author {
+                                    login
+                                }
+                                editor {
+                                    login
+                                }
+                            }
+                            pageInfo {
+                                hasNextPage
+                                endCursor
+                            }
+                        }
+                        closingIssuesReferences (<CIR_ARGS>) {
+                            totalCount
+                            nodes {
+                                number
+                                id
+                                title
+                                createdAt
+                                closed
+                                closedAt
+                                url
+                                comments (<CIR_ARGS>) {
+                                    totalCount
+                                    nodes {
+                                        url
+                                        body
+                                        createdAt
+                                        updatedAt
+                                        author {
+                                            login
+                                        }
+                                        editor {
+                                            login
+                                        }
+                                    }
+                                    pageInfo {
+                                        hasNextPage
+                                        endCursor
+                                    }
+                                }
+                            }
+                            pageInfo {
+                                hasNextPage
+                                endCursor
+                            }
+                        }
                     }
                     pageInfo {
                         hasNextPage
@@ -106,7 +160,6 @@ class GqlFetchGithub(GqlFetch):
         """
         super().close()
 
-
     def get_repository_query(self, organization: str, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a query for a given Organization.
@@ -128,7 +181,7 @@ class GqlFetchGithub(GqlFetch):
         return query
 
 
-    def get_repositories_once(self, organization: str, first: int = 50, after: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_repositories_once(self, organization: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
         """
         Get a list of repositories for a given Organization.
         """
@@ -136,18 +189,20 @@ class GqlFetchGithub(GqlFetch):
         data = self.fetch_data(query)
         return data
 
-    def get_repositories(self, organization: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
+    def get_repositories(self, organization: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get a list of repositories for a given Organization.
         """
         repositories = []
         after = None
         while True:
-            data = self.get_repositories_once(organization, first, after)
+            data = self.get_repositories_once(organization, first, after, ignore_errors)
             repositories.extend(data.get('organization', {}).get('repositories', {}).get('nodes', []))
             if progress_cb is not None:
                 progress_cb(len(repositories), data['organization']['repositories']['totalCount'])
             if not data['organization']['repositories']['pageInfo']['hasNextPage']:
+                break
+            if limit is not None and len(repositories) >= limit:
                 break
             after = data['organization']['repositories']['pageInfo']['endCursor']   
         return repositories
@@ -156,11 +211,12 @@ class GqlFetchGithub(GqlFetch):
         """
         Get a query for a given Repository.
         """
-        pr_first_arg = pr_after_arg = comma_arg = ""
+        pr_first_arg = pr_after_arg = cir_first_arg = comma_arg = ""
         query_repo_args = f'owner: "{organization}", name: "{repository}"'
 
         if (first is not None):
             pr_first_arg = f"first: {first}"
+            cir_first_arg = f"first: {first}" # TODO: CIR pagination, punt with first for now
         if (after is not None):
             pr_after_arg = f'after: "{after}"'
         if pr_first_arg != "" and pr_after_arg != "":
@@ -170,9 +226,10 @@ class GqlFetchGithub(GqlFetch):
         # We can't use format() here because the query is filled with curly braces
         query = self.pr_query_by_repo.replace("<REPO_ARGS>", query_repo_args)
         query = query.replace("<PR_ARGS>", pr_query_args)
+        query = query.replace("<CIR_ARGS>", cir_first_arg)
         return query
 
-    def get_prs_once(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_prs_once(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
         """
         Get a list of PRs for a repository
         """
@@ -180,21 +237,36 @@ class GqlFetchGithub(GqlFetch):
         data = self.fetch_data(query)
         return data
 
-    def get_prs(self, organization: str, repository: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
+    def get_prs(self, organization: str, repository: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get a list of PRs for a given Repository.
         """
         prs = []
         after = None
         while True:
-            data = self.get_prs_once(organization, repository, first, after)
+            data = self.get_prs_once(organization, repository, first, after, ignore_errors)
             prs.extend(data.get('repository', {}).get('pullRequests', {}).get('nodes', []))
             if progress_cb is not None:
                 progress_cb(len(prs), data['repository']['pullRequests']['totalCount'])
             if not data['repository']['pullRequests']['pageInfo']['hasNextPage']:
                 break
+            if limit is not None and len(prs) >= limit:
+                break
             after = data['repository']['pullRequests']['pageInfo']['endCursor']   
         return prs
 
+    def clean_prs(self, prs: List[Dict[str, Any]], clean_all: bool = False) -> List[Dict[str, Any]]:
+        """
+        Clean a list of PRs.
 
+        Delete empty sub-dicts from PRs
+        """
+        for pr in prs:
+            pr_comment_qty = pr.get('comments', {}).get('totalCount', 0)
+            if pr_comment_qty == 0 or clean_all:
+                del pr['comments']
+            pr_cir_qty = pr.get('closingIssuesReferences', {}).get('totalCount', 0)
+            if pr_cir_qty == 0 or clean_all:
+                del pr['closingIssuesReferences']
+        return prs
 

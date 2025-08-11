@@ -59,6 +59,7 @@ def print_pr(pr, format: OutputFormat = OutputFormat.SHORT, outfile=sys.stdout):
 
 if __name__ == "__main__":
     fetch_type = None
+    outfile = None
 
     parser = ArgumentParser(description='Github Fetch')
     parser.add_argument('--organization', type=str, required=True, help='Organization to fetch')
@@ -66,6 +67,8 @@ if __name__ == "__main__":
     parser.add_argument('--print-query', action='store_true', help='Print the query')
     parser.add_argument('--repository', type=str, help='Repository to fetch')
     parser.add_argument('--outbase', type=str, help='Output file base name')
+    parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
+    parser.add_argument('--limit', type=int, default=100, help='Stop when at least this many items have been fetched')
     args = parser.parse_args()
 
     if args.repository:
@@ -77,9 +80,9 @@ if __name__ == "__main__":
 
     if args.print_query:
         if fetch_type == 'repos':
-            query = gh.get_repository_query(args.organization)        
+            query = gh.get_repository_query(organization=args.organization, ignore_errors=True)        
         elif fetch_type == 'prs':
-            query = gh.get_pr_query(args.organization, args.repository)
+            query = gh.get_pr_query(organization=args.organization, repository=args.repository, ignore_errors=True)
 
         else:
             print("Invalid fetch type")
@@ -96,28 +99,33 @@ if __name__ == "__main__":
     gh.connect()
 
     if fetch_type == 'repos':
-        repositories = gh.get_repositories(organization=args.organization, progress_cb=progress_cb)
+        repositories = gh.get_repositories(organization=args.organization, progress_cb=progress_cb, ignore_errors=args.ignore_errors, limit=args.limit)
         if args.format == OutputFormat.SHORT or args.format == OutputFormat.LONG:
             for repository in repositories:
                 print_repo(repository=repository, format=args.format, outfile=outfile)
         elif args.format == OutputFormat.JSON:
             json.dump(repositories, outfile)
         elif args.format == OutputFormat.CSV:
-            csv.writer(outfile).writerows(repositories)
+            cw = csv.DictWriter(outfile, fieldnames=repositories[0].keys(), dialect='unix')
+            cw.writeheader()
+            cw.writerows(repositories)
     elif fetch_type == 'prs':
-        prs = gh.get_prs(organization=args.organization, repository=args.repository, progress_cb=progress_cb)
+        prs = gh.get_prs(organization=args.organization, repository=args.repository, progress_cb=progress_cb, ignore_errors=args.ignore_errors, limit=args.limit)
+        prs = gh.clean_prs(prs, clean_all=(args.format == OutputFormat.CSV))
         if args.format == OutputFormat.SHORT or args.format == OutputFormat.LONG:
             for pr in prs:
                 print_pr(pr=pr, format=args.format, outfile=outfile)
         elif args.format == OutputFormat.JSON:
             json.dump(prs, outfile)
         elif args.format == OutputFormat.CSV:
-            csv.writer(outfile).writerows(prs)
+            cw = csv.DictWriter(outfile, fieldnames=prs[0].keys(), dialect='unix')
+            cw.writeheader()
+            cw.writerows(prs)
     else:
         print("Invalid fetch type")
         exit(1)
 
-    if args.outfile:
+    if outfile is not None:
         outfile.close()
     exit(0)
     
