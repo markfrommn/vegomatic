@@ -2,12 +2,13 @@
 # fileparse - A set of utilities for parsing files.
 #
 
-import sys
-import io
-from typing import Callable, Union, Tuple, List
-from urllib import parse
-import json
 import csv
+import io
+import json
+import sys
+from typing import Callable, List, Tuple, Union
+from urllib import parse
+
 from . import FileSet
 
 def dict_flatten_values(adict: dict) -> dict:

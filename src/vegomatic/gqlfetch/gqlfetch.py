@@ -2,14 +2,16 @@
 GqlFetch module for fetching data from GraphQL endpoints with pagination support.
 """
 
-from typing import Any, Dict, List, Optional, Union, Iterator
-from dataclasses import dataclass
 import asyncio
-from gql import gql, Client
+from dataclasses import dataclass
+import os
+from typing import Any, Dict, Iterator, List, Optional, Union
+
+from gql import Client, gql
+from gql.dsl import DSLField, DSLFragment, DSLInlineFragment, DSLQuery, DSLSchema
 from gql.transport.aiohttp import AIOHTTPTransport
 from gql.transport.requests import RequestsHTTPTransport
-from gql.dsl import DSLSchema, DSLQuery, DSLField, DSLFragment, DSLInlineFragment
-import os
+import requests
 
 @dataclass
 class PageInfo:
@@ -196,6 +198,7 @@ class GqlFetch:
         query: Union[str, DSLQuery],
         variables: Optional[Dict[str, Any]] = None,
         extract_path: Optional[str] = None,
+        ignore_errors: bool = False,
         page_info_path: str = "pageInfo",
         edges_path: str = "edges",
         nodes_path: str = "nodes"
@@ -223,7 +226,13 @@ class GqlFetch:
         else:
             gql_query = query
             
-        result = self.client.execute(gql_query, variable_values=variables)
+        try:
+            result = self.client.execute(gql_query, variable_values=variables)
+        except Exception as e:
+            if ignore_errors and isinstance(e, requests.exceptions.HTTPError):
+                return {}
+            else:
+                raise e
         
         # Extract data if path specified
         if extract_path:
@@ -243,6 +252,7 @@ class GqlFetch:
         query: Union[str, DSLQuery],
         variables: Optional[Dict[str, Any]] = None,
         extract_path: Optional[str] = None,
+        ignore_errors: bool = False,
         page_info_path: str = "pageInfo",
         edges_path: str = "edges",
         nodes_path: str = "nodes"
@@ -270,7 +280,13 @@ class GqlFetch:
         else:
             gql_query = query
             
-        result = await self.client.execute_async(gql_query, variable_values=variables)
+        try:
+            result = await self.client.execute_async(gql_query, variable_values=variables)
+        except Exception as e:
+            if ignore_errors and isinstance(e, requests.exceptions.HTTPError):
+                return {}
+            else:
+                raise e
         
         # Extract data if path specified
         if extract_path:

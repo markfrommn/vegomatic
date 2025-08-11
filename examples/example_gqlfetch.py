@@ -4,10 +4,12 @@ Simple example demonstrating the GqlFetch module with a real GraphQL endpoint.
 """
 
 import asyncio
-from vegomatic.gqlfetch import GqlFetch
-from graphql import GraphQLSchema
 import pprint
+
 import dumper
+from graphql import GraphQLSchema
+
+from vegomatic.gqlfetch import GqlFetch
 
 def pretty_print(clas, indent=0):
     print(' ' * indent +  type(clas).__name__ +  ':')

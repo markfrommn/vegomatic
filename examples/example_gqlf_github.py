@@ -4,10 +4,12 @@ Simple example demonstrating the GqlFetch module Github module.
 """
 
 import asyncio
-from vegomatic.gqlf_github import GqlFetchGithub
-from graphql import GraphQLSchema
 import pprint
+
 import dumper
+from graphql import GraphQLSchema
+
+from vegomatic.gqlf_github import GqlFetchGithub
 
 def pretty_print(clas, indent=0):
     print(' ' * indent +  type(clas).__name__ +  ':')

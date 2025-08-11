@@ -5,8 +5,9 @@ This module provides a simple interface for database operations using the pydal 
 """
 
 import sys
+from typing import Callable, Tuple, Union
+
 from pydal import DAL
-from typing import Callable, Union, Tuple
 
 class DataFetch:
     """
