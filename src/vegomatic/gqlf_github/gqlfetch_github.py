@@ -47,9 +47,11 @@ class GqlFetchGithub(GqlFetch):
             repository(<REPO_ARGS>) { 
                 name
                 url
-                pullRequests(<PR_ARGS>, orderBy: { field: CREATED_AT, direction: DESC }) {
+                pullRequests(<PR_ARGS>, orderBy: { field: CREATED_AT, direction: ASC }) {
                     totalCount
                     nodes {
+                        id
+                        fullDatabaseId
                         number
                         title
                         state
@@ -66,8 +68,6 @@ class GqlFetchGithub(GqlFetch):
                         author {
                             login
                         }
-                        id
-                        fullDatabaseId
                     }
                     pageInfo {
                         hasNextPage
