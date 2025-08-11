@@ -12,19 +12,29 @@ class GqlFetchGithub(GqlFetch):
 
     repo_query_by_owner = """
         query {
-            organization({org_args}) {
-                repositories({repo_args}) { 
+            organization(<ORG_ARGS>) {
+                repositories(<REPO_ARGS>) { 
                     totalCount
-                    pageInfo {
-                        hasNextPage
-                        endCursor
-                    }
                     nodes {
                         name
                         url
-                        isPrivate
                         description
-                        # Add other repository fields you need
+                        createdAt
+                        updatedAt
+                        id
+                        databaseId
+                        diskUsage
+                        isArchived
+                        isDisabled
+                        isLocked
+                        isPrivate
+                        primaryLanguage {
+                            name
+                        }
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
                     }
                 }
             }
@@ -70,12 +80,14 @@ class GqlFetchGithub(GqlFetch):
         if (first is not None):
             repo_first_arg = f"first: {first}"
         if (after is not None):
-            repo_after_arg = f"after: {after}"
+            repo_after_arg = f'after: "{after}"'
         if repo_first_arg != "" and repo_after_arg != "":
             comma_arg = ", "
 
         repo_query_args = f"{repo_first_arg}{comma_arg}{repo_after_arg}"
-        query = self.repo_query_by_owner.format(org_args=query_owner_args, repo_args=repo_query_args)
+        # We can't use format() here because the query is filled with curly braces
+        query = self.repo_query_by_owner.replace("<ORG_ARGS>", query_owner_args)
+        query = query.replace("<REPO_ARGS>", repo_query_args)
         return query
 
     def get_repositories_once(self, organization: str, first: int = 50, after: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -97,9 +109,9 @@ class GqlFetchGithub(GqlFetch):
             repositories.extend(data.get('organization', {}).get('repositories', {}).get('nodes', []))
             if progress_cb is not None:
                 progress_cb(len(repositories), data['organization']['repositories']['totalCount'])
-            if not data['pageInfo']['hasNextPage']:
+            if not data['organization']['repositories']['pageInfo']['hasNextPage']:
                 break
-            after = data['pageInfo']['endCursor']
+            after = data['organization']['repositories']['pageInfo']['endCursor']   
         return repositories
 
 
