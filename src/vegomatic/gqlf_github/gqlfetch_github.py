@@ -10,6 +10,7 @@ class GqlFetchGithub(GqlFetch):
     A GraphQL client for fetching data from the Github GraphQL endpoint with pagination support.
     """
 
+    # The base query for repositories in a Github Organization.
     repo_query_by_owner = """
         query {
             organization(<ORG_ARGS>) {
@@ -31,6 +32,42 @@ class GqlFetchGithub(GqlFetch):
                         primaryLanguage {
                             name
                         }
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+    """
+        # The base query for repositories in a Github Organization.
+    pr_query_by_repo = """
+        query {
+            repository(<REPO_ARGS>) { 
+                name
+                url
+                pullRequests(<PR_ARGS>, orderBy: { field: CREATED_AT, direction: DESC }) {
+                    totalCount
+                    nodes {
+                        number
+                        title
+                        state
+                        permalink
+                        createdAt
+                        mergedAt
+                        updatedAt
+                        closedAt
+                        lastEditedAt
+                        merged
+                        mergedBy {
+                            login
+                        }
+                        author {
+                            login
+                        }
+                        id
+                        fullDatabaseId
                     }
                     pageInfo {
                         hasNextPage
@@ -90,6 +127,7 @@ class GqlFetchGithub(GqlFetch):
         query = query.replace("<REPO_ARGS>", repo_query_args)
         return query
 
+
     def get_repositories_once(self, organization: str, first: int = 50, after: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get a list of repositories for a given Organization.
@@ -113,5 +151,50 @@ class GqlFetchGithub(GqlFetch):
                 break
             after = data['organization']['repositories']['pageInfo']['endCursor']   
         return repositories
+
+    def get_pr_query(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None) -> str:
+        """
+        Get a query for a given Repository.
+        """
+        pr_first_arg = pr_after_arg = comma_arg = ""
+        query_repo_args = f'owner: "{organization}", name: "{repository}"'
+
+        if (first is not None):
+            pr_first_arg = f"first: {first}"
+        if (after is not None):
+            pr_after_arg = f'after: "{after}"'
+        if pr_first_arg != "" and pr_after_arg != "":
+            comma_arg = ", "
+
+        pr_query_args = f"{pr_first_arg}{comma_arg}{pr_after_arg}"
+        # We can't use format() here because the query is filled with curly braces
+        query = self.pr_query_by_repo.replace("<REPO_ARGS>", query_repo_args)
+        query = query.replace("<PR_ARGS>", pr_query_args)
+        return query
+
+    def get_prs_once(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get a list of PRs for a repository
+        """
+        query = self.get_pr_query(organization, repository, first, after)
+        data = self.fetch_data(query)
+        return data
+
+    def get_prs(self, organization: str, repository: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
+        """
+        Get a list of PRs for a given Repository.
+        """
+        prs = []
+        after = None
+        while True:
+            data = self.get_prs_once(organization, repository, first, after)
+            prs.extend(data.get('repository', {}).get('pullRequests', {}).get('nodes', []))
+            if progress_cb is not None:
+                progress_cb(len(prs), data['repository']['pullRequests']['totalCount'])
+            if not data['repository']['pullRequests']['pageInfo']['hasNextPage']:
+                break
+            after = data['repository']['pullRequests']['pageInfo']['endCursor']   
+        return prs
+
 
 
