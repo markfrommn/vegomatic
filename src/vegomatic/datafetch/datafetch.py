@@ -10,6 +10,7 @@ from dateutil.parser import parse
 from datetime import datetime
 
 from pydal import DAL, Field
+import pydal
 
 # Local utility function:
 
@@ -20,7 +21,6 @@ def is_date(string, fuzzy=False):
     :param string: str, string to check for date
     :param fuzzy: bool, ignore unknown tokens in string if True
     """
-
     try:
         parse(string, fuzzy=fuzzy)
         return True
@@ -122,6 +122,7 @@ class DataFetch:
     def dict_create_table(self, table_name: str, schema: Dict[str, str]) -> bool:
         """
         Create a table using dictionary schema with pydal Field objects.
+
         Parameters
         ----------
         table_name : str
@@ -129,10 +130,12 @@ class DataFetch:
         schema : Dict[str, str]
             Dictionary mapping column names to data types.
             Supported types: 'string', 'number', 'datetime'
+
         Returns
         -------
         bool
             True if the table was successfully created
+
         Examples
         --------
         >>> df = DataFetch()
@@ -147,6 +150,7 @@ class DataFetch:
         """
         if self.db is None:
             raise RuntimeError("No database connection. Call create() first.")
+
 
         # Create the table using pydal
         self.db.define_table(table_name, fields=schema, migrate=True)
@@ -183,7 +187,7 @@ class DataFetch:
         return True
 
     @classmethod
-    def dict_fields(cls, data_list: list) -> list:
+    def dict_fields(cls, data_list: list) -> list(Field):
         """
         Analyze a list of dictionaries and return pydal Field objects.
 
@@ -214,6 +218,7 @@ class DataFetch:
             return []
 
         # Save first dictionary
+
         #first_dict = data_list[0]
 
         # Collect all unique keys from all dictionaries
@@ -280,6 +285,8 @@ class DataFetch:
             The value to infer the field type for
         """
 
+        first_dict = data_list[0]
+
         # Collect all unique keys from all dictionaries
         all_keys = set()
         for data_dict in data_list:
@@ -287,10 +294,32 @@ class DataFetch:
                 all_keys.update(data_dict.keys())
 
         fields = []
+        field_types = {}
         for key in sorted(all_keys):
             field_type = cls._infer_field_type(data_list, key)
             fields.append(Field(key, field_type))
+            field_types[key] = None
 
+        # Infer the field types for each key
+        for dict in data_list:
+            for key in all_keys:
+                # Skip keys that are not in the current dictionary
+                if key not in dict.keys():
+                    continue
+                # if we have not yet inferred the field type, use the new type
+                new_field_type = cls._infer_field_type(data_list, key)
+                if field_types[key] is None:
+                    field_types[key] = new_field_type
+                # if we have already inferred the field type, check if it is consistent
+                elif field_types[key] != new_field_type:
+                    raise ValueError(f"Inconsistent field types for key {key}: {field_types[key]} != {new_field_type}")
+
+        # Now create the fields
+        for key in field_types.keys():
+            fields.append(Field(key, field_types[key]))
+
+        # Now resort fields to match the order of the keys in the first dictionary
+        fields = [field for key in first_dict.keys() for field in fields if field.name == key]
         return fields
 
     @classmethod
@@ -304,6 +333,7 @@ class DataFetch:
             List of dictionaries to analyze
         key : str
             The key to analyze
+
         Returns
         -------
         str
