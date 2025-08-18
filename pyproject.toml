@@ -6,7 +6,7 @@ authors = [
     {name = "Mark Gooderum",email = "3393412+markfrommn@users.noreply.github.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.9,<4"
+requires-python = ">=3.10,<4"
 dependencies = [
     "ciso8601 (>=2.3.2,<3.0.0)",
     "dumper (>=1.2.0,<2.0.0)",

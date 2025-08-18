@@ -89,40 +89,41 @@ def list_find_by_prop(alist: list, propname: str, propval: Union[str,int,float])
     return None
 
 
-def is_number(s:str) -> bool:
+def is_number(s:Union(None,str)) -> bool:
     if s is None:
         return False
-    try:
-        float(s)
+    nval = num_value(s)
+    if isinstance(nval, (float,int)):
         return True
+    return False
+
+
+def num_value(s:str) -> Union[float,int]:
+    nval = normalize_value(s)
+    if isinstance(nval, (float,int)):
+        return nval
+    return None
+
+# Normalize simple values to integral int or float type if possible
+def normalize_value(s:Union(None,str)) -> Union[float,int,str]:
+    if isinstance(s, (None,dict,list,object)):
+        return None
+
+    try:
+        nval = int(s)
+        if nval.is_integer():
+            return nval
     except ValueError:
         pass
 
     try:
-        import unicodedata
-        unicodedata.numeric(s)
-        return True
-    except (TypeError, ValueError):
+        nval = float(s)
+        return nval
+    except ValueError:
         pass
 
-    return False
+    return s
 
-def num_value(s:str) -> Union[float,int]:
-    if s is None:
-        return None
-    if not is_number(s):
-        return None
-    nval = float(s)
-    if nval.is_integer():
-        nval = int(nval)
-    return nval
-
-def normalize_value(s:str) -> Union[float,int,str]:
-    if s is None:
-        return None
-    if not is_number(s):
-        return s
-    nval = float(s)
-    if nval.is_integer():
-        nval = int(nval)
-    return nval
+# Return a new list sorted by the keylist from a dict
+def sort_list(adict: dict, keyseq: List(str)) -> list:
+    return sorted(adict, key=lambda x: [x[key] for key in keyseq])
