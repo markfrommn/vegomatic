@@ -4,13 +4,12 @@ datafetch - A set of utilities for fetching data from a database.
 This module provides a simple interface for database operations using the pydal library.
 """
 
-import sys
-from typing import Callable, Tuple, Union, Dict, Any
-from dateutil.parser import parse
+from typing import Callable, List, Tuple, Union, Dict, Any
 from datetime import datetime
-
+from dateutil.parser import parse
 from pydal import DAL, Field
-import pydal
+# pydal buries Table in the pydal.objects module
+from pydal.objects import Table
 
 # Local utility function:
 
@@ -119,7 +118,11 @@ class DataFetch:
         thetable = getattr(self.db, tablename)
         return thetable
 
+<<<<<<< HEAD
     def dict_create_table(self, table_name: str, schema: Dict[str, str]) -> bool:
+=======
+    def create_table(self, table_name: str, schema: list[Field]) -> bool:
+>>>>>>> 959cdc0 (- Add pydal table creation helpers.)
         """
         Create a table using dictionary schema with pydal Field objects.
 
@@ -127,9 +130,8 @@ class DataFetch:
         ----------
         table_name : str
             The name of the table to create
-        schema : Dict[str, str]
-            Dictionary mapping column names to data types.
-            Supported types: 'string', 'number', 'datetime'
+        schema : List[Field]
+            List of pydal Field objects
 
         Returns
         -------
@@ -151,6 +153,7 @@ class DataFetch:
         if self.db is None:
             raise RuntimeError("No database connection. Call create() first.")
 
+<<<<<<< HEAD
 
         # Create the table using pydal
         self.db.define_table(table_name, fields=schema, migrate=True)
@@ -182,12 +185,15 @@ class DataFetch:
             field_type = type_mapping[data_type]
             fields[column_name] = Field(column_name, field_type)
 
+=======
+>>>>>>> 959cdc0 (- Add pydal table creation helpers.)
         # Create the table using pydal
-        self.db.define_table(table_name, *fields.values())
+        self.db.define_table(table_name, fields=schema, migrate=True)
+        self.db.commit()
         return True
 
     @classmethod
-    def dict_fields(cls, data_list: list) -> list(Field):
+    def fields_from_dicts(cls, data_list: list[dict], unique_fields: list[str] = None, notnull_fields: list[str] = None) -> list[Field]:
         """
         Analyze a list of dictionaries and return pydal Field objects.
 
@@ -218,6 +224,7 @@ class DataFetch:
             return []
 
         # Save first dictionary
+<<<<<<< HEAD
 
         #first_dict = data_list[0]
 
@@ -286,14 +293,18 @@ class DataFetch:
         """
 
         first_dict = data_list[0]
+=======
+        #first_dict = data_list[0]
+>>>>>>> 959cdc0 (- Add pydal table creation helpers.)
 
         # Collect all unique keys from all dictionaries
         all_keys = set()
-        for data_dict in data_list:
-            if isinstance(data_dict, dict):
-                all_keys.update(data_dict.keys())
+        for row in data_list:
+            if isinstance(row, dict):
+                all_keys.update(row.keys())
 
         fields = []
+        skip_fields = set()
         field_types = {}
         for key in sorted(all_keys):
             field_type = cls._infer_field_type(data_list, key)
@@ -301,45 +312,65 @@ class DataFetch:
             field_types[key] = None
 
         # Infer the field types for each key
-        for dict in data_list:
+        for row in data_list:
             for key in all_keys:
                 # Skip keys that are not in the current dictionary
-                if key not in dict.keys():
+                if key not in row.keys():
                     continue
                 # if we have not yet inferred the field type, use the new type
-                new_field_type = cls._infer_field_type(data_list, key)
+                new_field_type = cls._infer_field_type(row[key])
+                # False means the value is something we can't handle so skip (object, sub-dict, List, etc.)
+                if new_field_type is False:
+                    skip_fields.add(key)
+                    continue
                 if field_types[key] is None:
                     field_types[key] = new_field_type
                 # if we have already inferred the field type, check if it is consistent
                 elif field_types[key] != new_field_type:
                     raise ValueError(f"Inconsistent field types for key {key}: {field_types[key]} != {new_field_type}")
 
-        # Now create the fields
-        for key in field_types.keys():
-            fields.append(Field(key, field_types[key]))
+        # Now remove the fields that we can't handle
+        for key in skip_fields:
+            all_keys.remove(key)
 
-        # Now resort fields to match the order of the keys in the first dictionary
-        fields = [field for key in first_dict.keys() for field in fields if field.name == key]
+
+        # Now create the fields
+        for key in all_keys:
+            if unique_fields is not None and key in unique_fields:
+                field_unique = True
+            else:
+                field_unique = False
+            if notnull_fields is not None and key in notnull_fields:
+                field_notnull = True
+            else:
+                field_notnull = False
+            fields.append(Field(key, type=field_types[key], unique=field_unique, notnull=field_notnull))
+
+        # Skip for now - we won't have the original order at this point anyway
+        #fields = [field for key in first_dict.keys() for field in fields if field.name == key]
+        if len(fields) == 0:
+            return None
         return fields
 
     @classmethod
-    def _infer_field_type(cls, data_list: list, key: str) -> str:
+    def _infer_field_type(cls, value) -> str:
         """
-        Infer the field type for a given key based on the values in the data list.
+        Infer the field type for a given value.
 
         Parameters
         ----------
-        data_list : list
-            List of dictionaries to analyze
-        key : str
-            The key to analyze
+        value : any
+            The value to infer the field type for
 
         Returns
         -------
         str
             The inferred field type for pydal
         """
+<<<<<<< HEAD
 
+=======
+>>>>>>> 959cdc0 (- Add pydal table creation helpers.)
         # Quick checks for things we can't handle
         if value is None:
             return None
@@ -395,68 +426,6 @@ class DataFetch:
             return 'integer'
         except ValueError:
             pass
-
-        values = []
-        for data_dict in data_list:
-            if isinstance(data_dict, dict) and key in data_dict:
-                values.append(data_dict[key])
-
-        if not values:
-            return 'string'  # Default to string if no values found
-
-        # Check for datetime type
-        datetime_count = 0
-        for value in values:
-            if isinstance(value, datetime):
-                datetime_count += 1
-            elif isinstance(value, str) and is_date(value):
-                datetime_count += 1
-
-        if datetime_count > 0:
-            return 'datetime'
-
-        # Check for boolean type
-        bool_count = 0
-        for value in values:
-            if isinstance(value, bool):
-                bool_count += 1
-            elif isinstance(value, int) and value in (0, 1):
-                bool_count += 1
-            elif isinstance(value, str) and value.lower() in ('true', 'false'):
-                bool_count += 1
-
-        if bool_count > 0:
-            return 'boolean'
-
-        # Check for float type
-        float_count = 0
-        for value in values:
-            if isinstance(value, float):
-                float_count += 1
-            elif isinstance(value, str):
-                try:
-                    float(value)
-                    float_count += 1
-                except ValueError:
-                    pass
-
-        if float_count > 0:
-            return 'double'
-
-        # Check for integer type
-        int_count = 0
-        for value in values:
-            if isinstance(value, int):
-                int_count += 1
-            elif isinstance(value, str):
-                try:
-                    int(value)
-                    int_count += 1
-                except ValueError:
-                    pass
-
-        if int_count > 0:
-            return 'integer'
 
         # Default to string for everything else
         return 'string'
