@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Import main modules
 from .gqlfetch import GqlFetch, PageInfo
