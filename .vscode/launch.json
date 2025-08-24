@@ -5,13 +5,13 @@
     "version": "0.2.2",
     "configurations": [
 
-
         {
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "justMyCode": false
         },
         {
             "name": "Python Debugger: Github Fetch",
@@ -19,10 +19,35 @@
             "request": "launch",
             "program": "examples/github_fetch.py",
             "console": "integratedTerminal",
+            "justMyCode": false,
             "args": [
                 "--organization",
                 "psols",
                 "--print-query"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Teams Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=teams",
+                "--format=table"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Issues Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=issues",
+                "--team=ff155ab0-e5b3-4373-9090-0ddde594c034",
+                "--limit=100",
+                "--format=table"
             ]
         }
     ]
