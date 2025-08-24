@@ -2,7 +2,7 @@
 GqlFetch-linear module for fetching data from the Linear GraphQL endpoint with pagination support.
 """
 
-from typing import Any, Dict, List, Optional, Union, Iterator, Callable
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from vegomatic.gqlfetch import GqlFetch
 class GqlFetchLinear(GqlFetch):
@@ -37,6 +37,12 @@ class GqlFetchLinear(GqlFetch):
             nodes {
               id
               identifier
+              title
+              createdAt
+              startedAt
+              completedAt
+              description
+              url
             }
             pageInfo {
                 hasNextPage
@@ -163,7 +169,7 @@ class GqlFetchLinear(GqlFetch):
         self,
         endpoint: Optional[str] = None,
         key: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[Mapping[str, str]] = None,
         use_async: bool = False,
         fetch_schema: bool = True,
         timeout: Optional[int] = None
@@ -174,7 +180,7 @@ class GqlFetchLinear(GqlFetch):
         GraphQL Key is used for Linear.app (not token) - base class will DTRT and leave out Bearer
         """
         if endpoint is None:
-            endpoint = "https://api.linear.com/graphql"
+            endpoint = "https://api.linear.app/graphql"
         super().__init__(endpoint, key=key, headers=headers, use_async=use_async, fetch_schema=fetch_schema, timeout=timeout)
 
     @classmethod
@@ -188,7 +194,7 @@ class GqlFetchLinear(GqlFetch):
       return outvalue
 
     @classmethod
-    def replace_or_append_field(cls, adict: Dict[str, Any], key: str, newStuff: Dict[str, Any] | List[Any], subProps: Optional[List[str]] = None) -> Dict[str, Any]:
+    def replace_or_append_field(cls, adict: Mapping[str, Any], key: str, newStuff: Mapping[str, Any] | List[Any], subProps: Optional[List[str]] = None) -> Mapping[str, Any]:
         """
         Replace or append a new value to an existing List field in a dict.
 
@@ -213,6 +219,36 @@ class GqlFetchLinear(GqlFetch):
             raise TypeError("property {} or newStuff not a list".format(key))
           toExtend.extend(toAdd)
         return adict
+
+    @classmethod
+    def clean_issue(cls, issue: Mapping[str, Any]) -> Mapping[str, Any]:
+        """
+        Clean a single Issue.
+        """
+        if issue.get('children', {}).get('nodes', []):
+          if (len(issue.get('children', {}).get('nodes', [])) == 0):
+            del issue['children']
+        if issue.get('inverseRelations', {}).get('nodes', []):
+          if (len(issue.get('inverseRelations', {}).get('nodes', [])) == 0):
+            del issue['inverseRelations']
+        if issue.get('relations', {}).get('nodes', []):
+          if (len(issue.get('relations', {}).get('nodes', [])) == 0):
+            del issue['relations']
+        if issue.get('history', {}).get('nodes', []):
+          if (len(issue.get('history', {}).get('nodes', [])) == 0):
+            del issue['history']
+        return issue
+
+    @classmethod
+    def clean_issues(cls, issues: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+        """
+        Clean a list of Issues.
+
+        Delete empty sub-dicts from Issues
+        """
+        for id, issue in issues:
+            issue = cls.clean_issue(issue)
+        return issues
 
     def connect(self):
         """
@@ -241,7 +277,7 @@ class GqlFetchLinear(GqlFetch):
 
         team_query_args = f"{team_first_arg}{comma_arg}{team_after_arg}"
         # We can't use format() here because the query is filled with curly braces
-        query = query.replace("<TEAM_ARGS>", team_query_args)
+        query = self.team_query.replace("<TEAM_ARGS>", team_query_args)
         return query
 
     def get_issues_query(self, team: str, first: int = 50, after: Optional[str] = None) -> str:
@@ -313,15 +349,15 @@ class GqlFetchLinear(GqlFetch):
         query = query.replace("<HISTORY_ARGS>", history_query_args)
         return query
 
-    def get_teams_once(self, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
+    def get_teams_once(self, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
         Get a list of teams without for one batch.
         """
         query = self.get_team_query(first, after)
-        data = self.fetch_data(query)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
-    def get_teams(self, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_teams(self, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
         """
         Get a list of teams, iterating over all pages.
         """
@@ -338,32 +374,37 @@ class GqlFetchLinear(GqlFetch):
             if limit is not None and len(teams) >= limit:
                 break # TODO: Add a limit to the query
             after = data['teams']['pageInfo']['endCursor']
-        return teams
+        return data.get('teams', {}).get('nodes', [])
 
-    def get_issues_once(self, organization: str, team: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
+    def get_issues_once(self, team: str, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a team
         """
-        query = self.get_issues_query(organization, team, first, after)
+        if issues is None:
+          issues = {}
+        query = self.get_issues_query(team, first, after)
         data = self.fetch_data(query)
+        for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
+            issues[issue['identifier']] = issue
         return data
 
-    def get_issues(self, organization: str, team: str, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_issues(self, team: str, issues: Mapping[str, Any] = None, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a given Team.
 
         We build this as a dict of issues, keyed by issue id do that we can merge the data from get_issue_all_data() later.
         """
-        issues = {}
+        if issues is None:
+          issues = {}
         after = None
         while True:
-            data = self.get_issues_once(organization, team, first, after, ignore_errors)
+            data = self.get_issues_once(team, issues, first, after, ignore_errors)
             for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
                 # Flag that we are incomplete so we can replace later instead of having to merge
                 issue["is_full"] = False
                 issues[issue['identifier']] = issue
             if progress_cb is not None:
-                progress_cb(len(issues), data['team']['issues']['totalCount'])
+                progress_cb(len(issues), -1)
             if not data['team']['issues']['pageInfo']['hasNextPage']:
                 break
             if limit is not None and len(issues) >= limit:
@@ -371,66 +412,53 @@ class GqlFetchLinear(GqlFetch):
             after = data['team']['issues']['pageInfo']['endCursor']
         return issues
 
-    def get_issue_all_data_once(self, issues: Dict[str, Any], issue: str,
+    def get_issue_all_data_once(self, issue: Mapping[str, Any],
                                 children_first: int = 50, children_after: Optional[str] = None,
                                 inverse_relations_first: int = 50, inverse_relations_after: Optional[str] = None,
                                 relations_first: int = 50, relations_after: Optional[str] = None,
                                 history_first: int = 50, history_after: Optional[str] = None,
-                                ignore_errors: bool = False) -> List[Dict[str, Any]]:
+                                ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
-        Get a list of Issues for a team
+        Get all data for a given Issue on a single iteration.
         """
-        if issue["identifier"] not in issues:
-            issues[issue["identifier"]] = issue
-        else:
-            issue = issues[issue]
-        query = self.get_issue_query(issue, children_first, children_after, inverse_relations_first, inverse_relations_after, relations_first, relations_after, history_first, history_after, ignore_errors)
+        query = self.get_issue_query(issue["identifier"],
+                                      children_first = children_first, children_after = children_after,
+                                      inverse_relations_first = inverse_relations_first, inverse_relations_after = inverse_relations_after,
+                                      relations_first = relations_first, relations_after = relations_after,
+                                      history_first = history_first, history_after = history_after
+                                    )
+
         data = self.fetch_data(query)
         new_issue = data["issue"]
-        if not issue["is_full"]:
-          issue = new_issue
-          issues[issue["identifier"]] = issue
-        else:
-          # Append the new data to the existing issue
-          self.replace_or_append_field(issue, "children", new_issue["children"])
-          self.replace_or_append_field(issue, "inverseRelations", new_issue["inverseRelations"])
-          self.replace_or_append_field(issue, "relations", new_issue["relations"])
-          self.replace_or_append_field(issue, "history", new_issue["history"]["nodes"])
+
+        # Append the new data to the existing issue
+        if len(new_issue["children"]["nodes"]) > 0:
+          self.replace_or_append_field(issue, "children", new_issue["children"], ["nodes"])
+        if len(new_issue["inverseRelations"]["nodes"]) > 0:
+          self.replace_or_append_field(issue, "inverseRelations", new_issue["inverseRelations"], ["nodes"] )
+        if len(new_issue["relations"]["nodes"]) > 0:
+          self.replace_or_append_field(issue, "relations", new_issue["relations"], ["nodes"])
+        if len(new_issue["history"]["nodes"]) > 0:
+          self.replace_or_append_field(issue, "history", new_issue["history"], ["nodes"])
 
         return issue
 
-    def get_issue_all_data(self, issue: str, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_issue_all_data(self, issueid: str, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
         Get all the data for a given Issue.
         """
-        issues =
-        after = None
+        issue = {}
+        issue["identifier"] = issueid
         children_first = inverse_relations_first = relations_first = history_first = 50
         children_after = inverse_relations_after = relations_after = history_after = None
         while True:
-            data = self.get_issue_all_data_once(issue, children_first, children_after, inverse_relations_first, inverse_relations_after, relations_first, relations_after, history_first, history_after, ignore_errors)
-            issues.extend(data.get('issue', {}).get('nodes', []))
-            if progress_cb is not None:
-                progress_cb(len(issues), data['issue']['totalCount'])
-            if not data['issue']['pageInfo']['hasNextPage']:
-                break
-            if limit is not None and len(issues) >= limit:
-                break
-            after = data['team']['issues']['pageInfo']['endCursor']
-        return issues
-
-    def clean_issues(self, issues: List[Dict[str, Any]], clean_all: bool = False) -> List[Dict[str, Any]]:
-        """
-        Clean a list of Issues.
-
-        Delete empty sub-dicts from Issues
-        """
-        for pr in issues:
-            pr_comment_qty = pr.get('comments', {}).get('totalCount', 0)
-            if pr_comment_qty == 0 or clean_all:
-                del pr['comments']
-            pr_cir_qty = pr.get('closingIssuesReferences', {}).get('totalCount', 0)
-            if pr_cir_qty == 0 or clean_all:
-                del pr['closingIssuesReferences']
-        return issues
+            data = self.get_issue_all_data_once(issue, ignore_errors = ignore_errors,
+                                                children_first = children_first, children_after = children_after,
+                                                inverse_relations_first = inverse_relations_first,
+                                                inverse_relations_after = inverse_relations_after,
+                                                relations_first = relations_first, relations_after = relations_after,
+                                                history_first = history_first, history_after = history_after)
+            #if progress_cb is not None:
+            #    progress_cb(len(issues), data['issue']['totalCount'])
+        return data.get('issue', {})
 
