@@ -491,12 +491,40 @@ class GqlFetchLinear(GqlFetch):
         children_first = inverse_relations_first = relations_first = history_first = 50
         children_after = inverse_relations_after = relations_after = history_after = None
         while True:
+            need_more = False
             issue = self.get_issue_all_data_once(issue, ignore_errors = ignore_errors,
                                                 children_first = children_first, children_after = children_after,
                                                 inverse_relations_first = inverse_relations_first,
                                                 inverse_relations_after = inverse_relations_after,
                                                 relations_first = relations_first, relations_after = relations_after,
                                                 history_first = history_first, history_after = history_after)
+            # We have to check for multiple continuations but we can do them all at once
+            if children_first > 0 and issue.get('children', {}).get('pageInfo', {}).get('hasNextPage'):
+              children_after = issue.get('children', {}).get('pageInfo', {}).get('endCursor')
+              need_more = True
+            else:
+              children_after = None
+              children_first = 0
+            if inverse_relations_first > 0 and issue.get('inverseRelations', {}).get('pageInfo', {}).get('hasNextPage'):
+              inverse_relations_after = issue.get('inverseRelations', {}).get('pageInfo', {}).get('endCursor')
+              need_more = True
+            else:
+              inverse_relations_after = None
+              inverse_relations_first = 0
+            if relations_first > 0 and issue.get('relations', {}).get('pageInfo', {}).get('hasNextPage'):
+              relations_after = issue.get('relations', {}).get('pageInfo', {}).get('endCursor')
+              need_more = True
+            else:
+              relations_after = None
+              relations_first = 0
+            if history_first > 0 and issue.get('history', {}).get('pageInfo', {}).get('hasNextPage'):
+              history_after = issue.get('history', {}).get('pageInfo', {}).get('endCursor')
+              need_more = True
+            else:
+              history_after = None
+              history_first = 0
+            if not need_more:
+              break
             #if progress_cb is not None:
             #    progress_cb(len(issues), data['issue']['totalCount'])
             break
