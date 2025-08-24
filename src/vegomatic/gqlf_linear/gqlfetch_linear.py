@@ -246,8 +246,9 @@ class GqlFetchLinear(GqlFetch):
 
         Delete empty sub-dicts from Issues
         """
-        for id, issue in issues:
-            issue = cls.clean_issue(issue)
+        for id in issues:
+            issue = cls.clean_issue(issues[id])
+            issues[id] = issue
         return issues
 
     def connect(self):
