@@ -14,7 +14,7 @@ class GqlFetchGithub(GqlFetch):
     repo_query_by_owner = """
         query {
             organization(<ORG_ARGS>) {
-                repositories(<REPO_ARGS>) { 
+                repositories(<REPO_ARGS>) {
                     totalCount
                     nodes {
                         name
@@ -41,10 +41,11 @@ class GqlFetchGithub(GqlFetch):
             }
         }
     """
-        # The base query for repositories in a Github Organization.
+
+    # The base query for repositories in a Github Organization.
     pr_query_by_repo = """
         query {
-            repository(<REPO_ARGS>) { 
+            repository(<REPO_ARGS>) {
                 name
                 url
                 pullRequests(<PR_ARGS>, orderBy: { field: CREATED_AT, direction: ASC }) {
@@ -146,7 +147,7 @@ class GqlFetchGithub(GqlFetch):
         """
         if endpoint is None:
             endpoint = "https://api.github.com/graphql"
-        super().__init__(endpoint, token, headers, use_async, fetch_schema, timeout)
+        super().__init__(endpoint, token=token, headers=headers, use_async=use_async, fetch_schema=fetch_schema, timeout=timeout)
 
     def connect(self):
         """
@@ -204,7 +205,7 @@ class GqlFetchGithub(GqlFetch):
                 break
             if limit is not None and len(repositories) >= limit:
                 break
-            after = data['organization']['repositories']['pageInfo']['endCursor']   
+            after = data['organization']['repositories']['pageInfo']['endCursor']
         return repositories
 
     def get_pr_query(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None) -> str:
@@ -252,7 +253,7 @@ class GqlFetchGithub(GqlFetch):
                 break
             if limit is not None and len(prs) >= limit:
                 break
-            after = data['repository']['pullRequests']['pageInfo']['endCursor']   
+            after = data['repository']['pullRequests']['pageInfo']['endCursor']
         return prs
 
     def clean_prs(self, prs: List[Dict[str, Any]], clean_all: bool = False) -> List[Dict[str, Any]]:
