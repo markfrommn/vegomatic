@@ -18,8 +18,8 @@ def example_fetch_teams(client: GqlFetchLinear) -> list[dict]:
     teams = client.get_teams()
     return teams
 
-def example_fetch_issue(client: GqlFetchLinear, issue: str) -> dict:
-    issue = client.get_issue(issue)
+def example_fetch_issue(client: GqlFetchLinear, issueid: str) -> dict:
+    issue = client.get_issue_all_data(issueid)
     return issue
 
 def example_fetch_issues(client: GqlFetchLinear, team: str, limit: int = None) -> list[dict]:
@@ -41,32 +41,40 @@ if __name__ == "__main__":
     if args.fetch == 'issues' and args.team is None:
         parser.error('Team is required for fetching issues')
 
+    if args.issue is not None:
+        args.fetch = 'issue'
+
     client = GqlFetchLinear()
     client.connect()
 
+    columns = None
+    issue_columns = [ 'key', 'identifier', 'createdAt', 'startedAt', 'completedAt', 'title' ] #  'id', 'description', 'url']
     retval = None
     if args.fetch == 'teams':
         retval = example_fetch_teams(client)
     elif args.fetch == 'issue':
-        retval = example_fetch_issue(client, args.issue)
+        issue = example_fetch_issue(client, args.issue)
+        retval = [ issue ]
+        columns = issue_columns
     elif args.fetch == 'issues':
-        retval = example_fetch_issues(client, args.team, args.limit)
-        retval = GqlFetchLinear.clean_issues(retval)
+        retval1 = example_fetch_issues(client, args.team, args.limit)
+        retval2 = GqlFetchLinear.clean_issues(retval1)
+        retval = list(retval2.values())
+        columns = issue_columns
+
+    if args.format == 'csv' or args.format == 'table':
+        df = pd.DataFrame(retval)
+        if columns is not None:
+            # Slice out all rows plus the columns we want
+            df = df.loc[:, df.columns.isin(columns)]
 
     if args.format == 'json':
         print(json.dumps(retval, indent=4))
     elif args.format == 'csv':
         if args.output is None:
-            csvfile = sys.stdout
-        else:
-            csvfile = open(args.output, 'w', newline='', encoding='utf-8')
-        with csvfile:
-            mywriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            mywriter.writerow(retval.keys())
-            for row in retval:
-                mywriter.writerow(row.values())
+            args.output = "/dev/stdout"
+        df.to_csv(args.output, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
     elif args.format == 'table':
-        df = pd.DataFrame(retval)
         print(df.to_string())
 #    elif args.format == 'dirtree':
 #        print(dirtree.dumps(retval, indent=4))

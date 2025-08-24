@@ -7,15 +7,15 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 from vegomatic.gqlfetch import GqlFetch
 class GqlFetchLinear(GqlFetch):
     """
-    A GraphQL client for fetching data from the Linear.app GraphQL endpoint with pagination support.
+    A GraphQL query for fetching Teams from the Linear.app GraphQL endpoint with pagination support.
     """
-
     # The base query for teams in a Linear Organization.
     team_query = """
       query Teams {
         teams {
           nodes {
             id
+            key
             displayName
             name
           }
@@ -37,10 +37,10 @@ class GqlFetchLinear(GqlFetch):
             nodes {
               id
               identifier
-              title
               createdAt
               startedAt
               completedAt
+              title
               description
               url
             }
@@ -52,23 +52,8 @@ class GqlFetchLinear(GqlFetch):
         }
       }
     """
-    # Sample ISSUE_ARGS: id: "BLD-832"
-    issue_query_all_data = """
-      query Issue {
-        issue(<ISSUE_ARGS>) {
-          id
-          identifier
-          title
-          createdAt
-          startedAt
-          completedAt
-          description
-          url
-          activitySummary
-          parent {
-            id
-            identifier
-          }
+
+    issue_subquery_children = """
           children (<CHILDREN_ARGS>) {
             nodes {
               id
@@ -80,7 +65,9 @@ class GqlFetchLinear(GqlFetch):
                 endCursor
             }
           }
-          inverseRelations (<INVERSE_RELATIONS_ARGS>) {
+    """
+    issue_subquery_inverse_relations = """
+         inverseRelations (<INVERSE_RELATIONS_ARGS>) {
             nodes {
               id
               type
@@ -98,6 +85,8 @@ class GqlFetchLinear(GqlFetch):
                 endCursor
             }
           }
+    """
+    issue_subquery_relations = """
           relations (<RELATIONS_ARGS>) {
             nodes {
               id
@@ -116,6 +105,8 @@ class GqlFetchLinear(GqlFetch):
                 endCursor
             }
           }
+    """
+    issue_subquery_history = """
           history (<HISTORY_ARGS>) {
             nodes {
               attachment {
@@ -161,6 +152,29 @@ class GqlFetchLinear(GqlFetch):
                 endCursor
             }
           }
+
+    """
+    # Sample ISSUE_ARGS: id: "BLD-832"
+    issue_query_all_data = """
+      query Issue {
+        issue(<ISSUE_ARGS>) {
+          id
+          identifier
+          createdAt
+          startedAt
+          completedAt
+          title
+          description
+          url
+          activitySummary
+          parent {
+            id
+            identifier
+          }
+          <SUBQUERY_CHILDREN>
+          <SUBQUERY_INVERSE_RELATIONS>
+          <SUBQUERY_RELATIONS>
+          <SUBQUERY_HISTORY>
         }
       }
     """
@@ -309,33 +323,55 @@ class GqlFetchLinear(GqlFetch):
         """
         Get a query for everything about a given Issue.
         """
-        history_first_arg = history_after_arg = children_first_arg = children_after_arg = inverse_relations_first_arg = inverse_relations_after_arg = relations_first_arg = relations_after_arg = comma_arg = ""
-        query_issue_args = f'id: "{issue}"'
+        query = self.issue_query_all_data
 
-        if history_first is not None:
-            history_first_arg = f"first: {history_first}"
-        if history_after is not None:
-            history_after_arg = f'after: "{history_after}"'
-        if history_first_arg != "" and history_after_arg != "":
-            history_comma_arg = ","
-        if children_first is not None:
-            children_first_arg = f"first: {children_first}"
-        if children_after is not None:
-            children_after_arg = f'after: "{children_after}"'
-        if children_first_arg != "" and children_after_arg != "":
-            children_comma_arg = ","
-        if inverse_relations_first is not None:
-            inverse_relations_first_arg = f"first: {inverse_relations_first}"
-        if inverse_relations_after is not None:
+        # Initialize all the GraphQL arguments to empty strings
+        history_first_arg = history_after_arg = history_comma_arg = ""
+        children_first_arg = children_after_arg = children_comma_arg = ""
+        inverse_relations_first_arg = inverse_relations_after_arg = inverse_relations_comma_arg = ""
+        relations_first_arg = relations_after_arg = relations_comma_arg = ""
+
+        query_issue_args = f'id: "{issue}"'
+        # History - fill in or delete
+        if history_first is not None and history_first > 0:
+          query = query.replace("<SUBQUERY_HISTORY>", self.issue_subquery_history)
+          history_first_arg = f"first: {history_first}"
+          if history_after is not None:
+              history_after_arg = f'after: "{history_after}"'
+          if history_first_arg != "" and history_after_arg != "":
+              history_comma_arg = ","
+        else:
+          query = query.replace("<SUBQUERY_HISTORY>", "")
+        # Children - fill in or delete
+        if children_first is not None and children_first > 0:
+          query = query.replace("<SUBQUERY_CHILDREN>", self.issue_subquery_children)
+          children_first_arg = f"first: {children_first}"
+          if children_after is not None:
+              children_after_arg = f'after: "{children_after}"'
+          if children_first_arg != "" and children_after_arg != "":
+              children_comma_arg = ","
+        else:
+          query = query.replace("<SUBQUERY_CHILDREN>", "")
+        # Inverse Relations - fill in or delete
+        if inverse_relations_first is not None and inverse_relations_first > 0:
+          query = query.replace("<SUBQUERY_INVERSE_RELATIONS>", self.issue_subquery_inverse_relations)
+          inverse_relations_first_arg = f"first: {inverse_relations_first}"
+          if inverse_relations_after is not None:
             inverse_relations_after_arg = f'after: "{inverse_relations_after}"'
-        if inverse_relations_first_arg != "" and inverse_relations_after_arg != "":
-            inverse_relations_comma_arg = ","
-        if relations_first is not None:
-            relations_first_arg = f"first: {relations_first}"
-        if relations_after is not None:
-            relations_after_arg = f'after: "{relations_after}"'
-        if relations_first_arg != "" and relations_after_arg != "":
-            relations_comma_arg = ","
+          if inverse_relations_first_arg != "" and inverse_relations_after_arg != "":
+              inverse_relations_comma_arg = ","
+        else:
+          query = query.replace("<SUBQUERY_INVERSE_RELATIONS>", "")
+        # Relations - fill in or delete
+        if relations_first is not None and relations_first > 0:
+          query = query.replace("<SUBQUERY_RELATIONS>", self.issue_subquery_relations)
+          relations_first_arg = f"first: {relations_first}"
+          if relations_after is not None:
+              relations_after_arg = f'after: "{relations_after}"'
+          if relations_first_arg != "" and relations_after_arg != "":
+              relations_comma_arg = ","
+        else:
+          query = query.replace("<SUBQUERY_RELATIONS>", "")
 
         children_query_args = f"{children_first_arg}{children_comma_arg}{children_after_arg}"
         inverse_relations_query_args = f"{inverse_relations_first_arg}{inverse_relations_comma_arg}{inverse_relations_after_arg}"
@@ -343,7 +379,7 @@ class GqlFetchLinear(GqlFetch):
         history_query_args = f"{history_first_arg}{history_comma_arg}{history_after_arg}"
 
         # We can't use format() here because the query is filled with curly braces
-        query = self.issue_query_all_data.replace("<ISSUE_ARGS>", query_issue_args)
+        query = query.replace("<ISSUE_ARGS>", query_issue_args)
         query = query.replace("<CHILDREN_ARGS>", children_query_args)
         query = query.replace("<INVERSE_RELATIONS_ARGS>", inverse_relations_query_args)
         query = query.replace("<RELATIONS_ARGS>", relations_query_args)
@@ -398,6 +434,8 @@ class GqlFetchLinear(GqlFetch):
         if issues is None:
           issues = {}
         after = None
+        if limit is not None and limit < first:
+          first = limit
         while True:
             data = self.get_issues_once(team, issues, first, after, ignore_errors)
             for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
@@ -442,7 +480,7 @@ class GqlFetchLinear(GqlFetch):
         if len(new_issue["history"]["nodes"]) > 0:
           self.replace_or_append_field(issue, "history", new_issue["history"], ["nodes"])
 
-        return issue
+        return new_issue
 
     def get_issue_all_data(self, issueid: str, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
@@ -453,7 +491,7 @@ class GqlFetchLinear(GqlFetch):
         children_first = inverse_relations_first = relations_first = history_first = 50
         children_after = inverse_relations_after = relations_after = history_after = None
         while True:
-            data = self.get_issue_all_data_once(issue, ignore_errors = ignore_errors,
+            issue = self.get_issue_all_data_once(issue, ignore_errors = ignore_errors,
                                                 children_first = children_first, children_after = children_after,
                                                 inverse_relations_first = inverse_relations_first,
                                                 inverse_relations_after = inverse_relations_after,
@@ -461,5 +499,6 @@ class GqlFetchLinear(GqlFetch):
                                                 history_first = history_first, history_after = history_after)
             #if progress_cb is not None:
             #    progress_cb(len(issues), data['issue']['totalCount'])
-        return data.get('issue', {})
+            break
+        return issue
 
