@@ -196,23 +196,45 @@ class GqlFetchLinear(GqlFetch):
       }
     """
 
-    def __init__(
-        self,
-        endpoint: Optional[str] = None,
-        key: Optional[str] = None,
-        headers: Optional[Mapping[str, str]] = None,
-        use_async: bool = False,
-        fetch_schema: bool = True,
-        timeout: Optional[int] = None
-    ):
+    @classmethod
+    def clean_issue(cls, issue: Mapping[str, Any]) -> Mapping[str, Any]:
         """
-        Initialize the GqlFetchLinear client.
+        Clean a single Issue.
+        Delete empty sub-dicts and hasNextPage false from Issues
+        """
+        if issue.get('children', {}):
+          if (len(issue['children']['nodes']) == 0):
+            del issue['children']
+          elif issue['children'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['children']['pageInfo']
+        if issue.get('inverseRelations', {}):
+          if (len(issue['inverseRelations'].get('nodes', [])) == 0):
+            del issue['inverseRelations']
+          elif issue['inverseRelations'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['inverseRelations']['pageInfo']
+        if issue.get('relations', {}):
+          if (len(issue['relations'].get('nodes', [])) == 0):
+            del issue['relations']
+          elif issue['relations'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['relations']['pageInfo']
+        if issue.get('history', {}):
+          if (len(issue['history'].get('nodes', [])) == 0):
+            del issue['history']
+          elif issue['history'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['history']['pageInfo']
+        return issue
 
-        GraphQL Key is used for Linear.app (not token) - base class will DTRT and leave out Bearer
+    @classmethod
+    def clean_issues(cls, issues: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
         """
-        if endpoint is None:
-            endpoint = "https://api.linear.app/graphql"
-        super().__init__(endpoint, key=key, headers=headers, use_async=use_async, fetch_schema=fetch_schema, timeout=timeout)
+        Clean a list of Issues.
+
+        Delete empty sub-dicts and hasNextPage false from Issues
+        """
+        for id in issues:
+            issue = cls.clean_issue(issues[id])
+            issues[id] = issue
+        return issues
 
     @classmethod
     def nested_get(indict: Mapping, keys: List[str]) -> Any:
@@ -253,45 +275,23 @@ class GqlFetchLinear(GqlFetch):
           toExtend.extend(toAdd)
         return adict
 
-    @classmethod
-    def clean_issue(cls, issue: Mapping[str, Any]) -> Mapping[str, Any]:
+    def __init__(
+        self,
+        endpoint: Optional[str] = None,
+        key: Optional[str] = None,
+        headers: Optional[Mapping[str, str]] = None,
+        use_async: bool = False,
+        fetch_schema: bool = True,
+        timeout: Optional[int] = None
+    ):
         """
-        Clean a single Issue.
-        Delete empty sub-dicts and hasNextPage false from Issues
-        """
-        if issue.get('children', {}):
-          if (len(issue['children']['nodes']) == 0):
-            del issue['children']
-          elif issue['children'].get('pageInfo', {}).get('hasNextPage') is False:
-            del issue['children']['pageInfo']
-        if issue.get('inverseRelations', {}):
-          if (len(issue['inverseRelations'].get('nodes', [])) == 0):
-            del issue['inverseRelations']
-          elif issue['inverseRelations'].get('pageInfo', {}).get('hasNextPage') is False:
-            del issue['inverseRelations']['pageInfo']
-        if issue.get('relations', {}):
-          if (len(issue['relations'].get('nodes', [])) == 0):
-            del issue['relations']
-          elif issue['relations'].get('pageInfo', {}).get('hasNextPage') is False:
-            del issue['relations']['pageInfo']
-        if issue.get('history', {}):
-          if (len(issue['history'].get('nodes', [])) == 0):
-            del issue['history']
-          elif issue['history'].get('pageInfo', {}).get('hasNextPage') is False:
-            del issue['history']['pageInfo']
-        return issue
+        Initialize the GqlFetchLinear client.
 
-    @classmethod
-    def clean_issues(cls, issues: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+        GraphQL Key is used for Linear.app (not token) - base class will DTRT and leave out Bearer
         """
-        Clean a list of Issues.
-
-        Delete empty sub-dicts and hasNextPage false from Issues
-        """
-        for id in issues:
-            issue = cls.clean_issue(issues[id])
-            issues[id] = issue
-        return issues
+        if endpoint is None:
+            endpoint = "https://api.linear.app/graphql"
+        super().__init__(endpoint, key=key, headers=headers, use_async=use_async, fetch_schema=fetch_schema, timeout=timeout)
 
     def connect(self):
         """
@@ -450,6 +450,8 @@ class GqlFetchLinear(GqlFetch):
         """
         teams = []
         after = None
+        if limit is not None and limit < first:
+          first = limit
         while True:
             data = self.get_teams_once(first, after, ignore_errors)
             teams.extend(data.get('teams', {}).get('nodes', []))

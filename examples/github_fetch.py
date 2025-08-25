@@ -9,14 +9,27 @@ from enum import Enum
 import json
 import pprint
 import sys
+import os
+from typing import Mapping
+import pandas as pd
 
 from vegomatic.gqlf_github import GqlFetchGithub
+from vegomatic.datafile import dictionary_to_json_files
 
+# State for fetch all PRs
+fetch_all_outdir = None
+fetch_all_count = 0
+fetch_all_client = None
+
+#
+# Argparse helpers
+#
 class OutputFormat(Enum):
-    LONG = 'long'
-    SHORT = 'short'
+    LIST = 'list'
+    TABLE = 'table'
     JSON = 'json'
     CSV = 'csv'
+    DIRTREE = 'dirtree'
 
     def __str__(self):
         return self.value
@@ -24,7 +37,21 @@ class OutputFormat(Enum):
     def __repr__(self):
         return self.value
 
+class FetchType(Enum):
+    REPOS = 'repos'
+    REPO_PRS = 'repoprs'
+    ALL_PRS = 'allprs'
+    PR = 'pr'
 
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return self.value
+
+#
+# Pretty print helper - Not used but saved for posterity
+#
 def pretty_print(clas, indent=0):
     print(' ' * indent +  type(clas).__name__ +  ':')
     indent += 4
@@ -34,98 +61,157 @@ def pretty_print(clas, indent=0):
         else:
             print(' ' * indent +  k + ': ' + str(v))
 
-def progress_cb(current, total):
-    print(f"Progress: {current} of {total}...", end='\n')
+def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, endCursor: str) -> None:
+    """
+    Callback for fetching PRs.
+    """
+    global fetch_all_outdir
+    global fetch_all_count
+    batch_count = len(prbatch)
+    fetch_all_count += batch_count
 
-def print_repo(repository, format: OutputFormat = OutputFormat.SHORT, outfile=sys.stdout):
-    if format == OutputFormat.SHORT:
-        print("{} - Created: {}, Updated: {}, Description: {}".format(
-            repository['name'], repository['createdAt'], repository['updatedAt'], repository['description']), file=outfile)
-    else:
-        print("Repository: {}".format(repository['name']), file=outfile)
-        print_repo = repository.copy()
-        del print_repo['name']
-        pprint.pprint(print_repo, stream=outfile)
-    outfile.flush()
+    status_endl = "\r"
+    for prname, apr in prbatch.items():
+        apr = GqlFetchGithub.clean_pr(apr)
+        prbatch[prname] = apr
 
-def print_pr(pr, format: OutputFormat = OutputFormat.SHORT, outfile=sys.stdout):
-    if format == OutputFormat.SHORT:
-        print("{} - State: {}, Created: {}, Merged: {}, Closed: {}, Title: {}".format(
-            pr['number'], pr['state'], pr['createdAt'], pr['mergedAt'], pr['closedAt'], pr['title']), file=outfile)
-    else:
-        print("PR: {}".format(pr['title']), file=outfile)
-        pprint.pprint(pr, stream=outfile)
-    outfile.flush()
+    # We need an outdir to save the PRs
+    assert fetch_all_outdir is not None, 'fetch_all_outdir is not set'
 
+    real_outdir = os.path.join(fetch_all_outdir, prorg, prrepo)
+
+    dictionary_to_json_files(real_outdir, prbatch)
+    print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
+
+def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None) -> list[dict]:
+    global fetch_all_outdir
+    global fetch_all_client
+
+    fetch_all_outdir = outdir
+    fetch_all_client = ghclient
+
+    # Github PRs only exist in repository scope, so we have to iterate all repos and fetch all PRs per repo
+    repos = ghclient.get_repositories(organization=prorg)
+    for repo in repos:
+        ghclient.get_prs(organization=prorg, repository=repo['name'], limit=None, batch_cb=fetch_prs_callback)
+    return
+
+#
+# Main
+#
 if __name__ == "__main__":
-    fetch_type = None
-    outfile = None
-
-    parser = ArgumentParser(description='Github Fetch')
-    parser.add_argument('--organization', type=str, required=True, help='Organization to fetch')
-    parser.add_argument('--format', type=OutputFormat, default=OutputFormat.SHORT, choices=list(OutputFormat))
-    parser.add_argument('--print-query', action='store_true', help='Print the query')
+    parser = ArgumentParser(description='Github Data Fetch')
+    # What to fetch
+    parser.add_argument('--fetch', type=FetchType, default=FetchType.REPOS, choices=list(FetchType), help='What to fetch (repos, repoprs, allprs, pr)')
+    parser.add_argument('--pr', type=str, default=None, help='SinglePR to fetch')
+    parser.add_argument('--organization', type=str, required=True, help='Organization to fetch from')
     parser.add_argument('--repository', type=str, help='Repository to fetch')
-    parser.add_argument('--outbase', type=str, help='Output file base name')
+
+    # Output format
+    parser.add_argument('--format', type=OutputFormat, default=OutputFormat.TABLE, choices=list(OutputFormat))
+    parser.add_argument('--output', type=str, default=None, help='Output file')
+    parser.add_argument('--outdir', type=str, help='Save to a directory (used for dirtree)')
+
+    # Query options
+    parser.add_argument('--print-query', action='store_true', help='Print the query')
     parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
     parser.add_argument('--limit', type=int, default=100, help='Stop when at least this many items have been fetched')
+
     args = parser.parse_args()
 
-    if args.repository:
-        fetch_type = 'prs'
-    else:
-        fetch_type = 'repos'
+    # We need a team if we are fetching teamissues
+    if args.fetch == 'repoprs' and args.repository is None:
+        parser.error('Repository is required for fetching repository PRs')
+        sys.exit(1)
 
-    gh = GqlFetchGithub()
+    if args.fetch == 'allprs':
+        if args.format not in ['json', 'dirtree']:
+            parser.error('Cannot use --allprs with format other than json or dirtree')
+            sys.exit(1)
+
+    if args.pr is not None:
+        args.fetch = 'pr'
+
+    if args.fetch == "pr":
+        parser.error('Cannot fetch a single PR - Not implemented')
+        sys.exit(1)
+
+    client = GqlFetchGithub()
 
     if args.print_query:
-        if fetch_type == 'repos':
-            query = gh.get_repository_query(organization=args.organization, ignore_errors=True)        
-        elif fetch_type == 'prs':
-            query = gh.get_pr_query(organization=args.organization, repository=args.repository, ignore_errors=True)
-
+        if args.fetch == FetchType.REPOS:
+            query = client.get_repository_query(organization=args.organization)
+        elif args.fetch == FetchType.REPO_PRS:
+            query = client.get_pr_query(organization=args.organization, repository=args.repository)
+        elif args.fetch == FetchType.ALL_PRS:
+            parser.error('Cannot print query for all PRs - Not implemented')
+            sys.exit()
+        elif args.fetch == FetchType.PR:
+            parser.error('Cannot print query for a single PR - Not implemented')
+            sys.exit(1)
         else:
             print("Invalid fetch type")
             exit(1)
         print("Query:\n{}".format(query))
         exit(0)
 
-    if args.outbase:
-        outname = args.outbase + '.' + args.format.value
+    if args.output:
+        outname = args.output
         outfile = open(outname, 'w')
     else:
         outfile = sys.stdout
 
-    gh.connect()
+    client.connect()
 
-    if fetch_type == 'repos':
-        repositories = gh.get_repositories(organization=args.organization, progress_cb=progress_cb, ignore_errors=args.ignore_errors, limit=args.limit)
-        if args.format == OutputFormat.SHORT or args.format == OutputFormat.LONG:
-            for repository in repositories:
-                print_repo(repository=repository, format=args.format, outfile=outfile)
-        elif args.format == OutputFormat.JSON:
-            json.dump(repositories, outfile)
-        elif args.format == OutputFormat.CSV:
-            cw = csv.DictWriter(outfile, fieldnames=repositories[0].keys(), dialect='unix')
-            cw.writeheader()
-            cw.writerows(repositories)
-    elif fetch_type == 'prs':
-        prs = gh.get_prs(organization=args.organization, repository=args.repository, progress_cb=progress_cb, ignore_errors=args.ignore_errors, limit=args.limit)
-        prs = gh.clean_prs(prs, clean_all=(args.format == OutputFormat.CSV))
-        if args.format == OutputFormat.SHORT or args.format == OutputFormat.LONG:
-            for pr in prs:
-                print_pr(pr=pr, format=args.format, outfile=outfile)
-        elif args.format == OutputFormat.JSON:
-            json.dump(prs, outfile)
-        elif args.format == OutputFormat.CSV:
-            cw = csv.DictWriter(outfile, fieldnames=prs[0].keys(), dialect='unix')
-            cw.writeheader()
-            cw.writerows(prs)
+    columns = None
+    repo_columns = [ 'name', 'createdAt', 'updatedAt', 'description' ]
+    pr_columns = [ 'number', 'state', 'createdAt', 'mergedAt', 'closedAt', 'title' ]
+    retval = None
+
+    if args.fetch == FetchType.ALL_PRS:
+        if args.outdir is None:
+            parser.error('Cannot use --allprs without --outdir')
+            sys.exit(1)
+        github_fetch_all_prs(client, args.organization, args.outdir)
+        sys.exit(0)
+    elif args.fetch == FetchType.REPOS:
+        retval = client.get_repositories(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
+        columns = repo_columns
+    elif args.fetch == FetchType.REPO_PRS:
+        retval = client.get_repo_prs(organization=args.organization, repository=args.repository, batch_cb=fetch_prs_callback, ignore_errors=args.ignore_errors, limit=args.limit)
+        columns = pr_columns
+    elif args.fetch == FetchType.PR:
+        parser.error('Cannot fetch a single PR - Not yet implemented')
+        sys.exit(1)
     else:
-        print("Invalid fetch type")
-        exit(1)
+        parser.error(f"Unknown fetch type: {args.fetch}")
+        sys.exit(1)
+
+    # retval may be be a dict - we need to convert to a list of values unless output is JSON or dirtree
+    if isinstance(retval, dict) and args.format not in [OutputFormat.JSON, OutputFormat.DIRTREE]:
+        retval = list(retval.values())
+
+    if args.format == OutputFormat.CSV or args.format == OutputFormat.TABLE:
+        df = pd.DataFrame(retval, columns=columns)
+        if columns is not None:
+            # Slice out all rows plus the columns we want
+            df = df.loc[:, df.columns.isin(columns)]
+
+    if args.format == OutputFormat.JSON:
+        print(json.dumps(retval, indent=4))
+    elif args.format == OutputFormat.CSV:
+        if args.output is None:
+            args.output = "/dev/stdout"
+        df.to_csv(args.output, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
+    elif args.format == OutputFormat.TABLE or args.format == OutputFormat.LIST:
+        print(df.to_string())
+    elif args.format == OutputFormat.DIRTREE:
+        dictionary_to_json_files(args.outdir, retval)
+    else:
+        print("Unknown format: ", args.format)
+
+    print("\n=== All examples completed successfully! ===")
 
     if outfile is not None:
         outfile.close()
-    exit(0)
-    
+    sys.exit(0)
