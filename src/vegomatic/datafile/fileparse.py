@@ -5,13 +5,14 @@
 import csv
 import io
 import json
+import os
 import sys
-from typing import Callable, List, Tuple, Union
+from typing import Dict, List, Mapping, Tuple, Union
 from urllib import parse
 
 from . import FileSet
 
-def dict_flatten_values(adict: dict) -> dict:
+def dict_flatten_values(adict: Mapping) -> dict:
     """
 
     :param adict:
@@ -30,7 +31,7 @@ def dict_from_kvpfile(filepath: str) -> dict:
 
     :type filepath:
     :param filepath:
-    :return: 
+    :return:
     """
     kvps = {}
     kvpfile = open(filepath, "r")
@@ -53,8 +54,8 @@ def dict_from_kvpfile(filepath: str) -> dict:
 def dict_from_urlfile(filepath: str) -> dict:
     """
 
-    :param filepath: 
-    :return: 
+    :param filepath:
+    :return:
     """
     kvps = {}
     urlfile = open(filepath, "r")
@@ -151,7 +152,7 @@ def column_from_csv_file(path: str, colnum: int) -> list:
     return retrows
 
 
-def data_to_json_file(filepath: str, odata: Union[dict, List[dict]]):
+def data_to_json_file(filepath: str, odata: Union[dict, list[dict]]):
     """
     Write data to a JSON file
     :type filepath:
@@ -161,3 +162,13 @@ def data_to_json_file(filepath: str, odata: Union[dict, List[dict]]):
     jsonfile = open(filepath, "w")
     json.dump(odata, jsonfile, sort_keys=True, indent=4)
     jsonfile.close()
+
+def dictionary_to_json_files(dirpath: str, adict: Mapping[str, dict]):
+    """
+    Write a dictionary to a directory of JSON files.
+    """
+    if not os.path.exists(dirpath):
+        os.makedirs(dirpath)
+    for key, val in adict.items():
+        filepath = f"{dirpath}/{key}.json"
+        data_to_json_file(filepath, val)

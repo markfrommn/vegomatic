@@ -26,18 +26,17 @@ class GqlFetchLinear(GqlFetch):
         }
       }
     """
-    # Sample TEAM ARGS = id: "ff155ab0-e5b3-4373-9090-0ddde594c034") {
-    # We keep this short because we have to refetch by issue anyway
-    issue_query_by_team = """
-      query Team {
-        team(<TEAM_ARGS>) {
-          id
-          name
+
+    #
+    # Node portion of group issue query
+    #
+    issue_query_core = """
           issues (<ISSUES_ARGS>) {
             nodes {
               id
               identifier
               createdAt
+              updatedAt
               startedAt
               completedAt
               title
@@ -49,7 +48,24 @@ class GqlFetchLinear(GqlFetch):
                 endCursor
             }
           }
+    """
+    # Sample TEAM ARGS = id: "ff155ab0-e5b3-4373-9090-0ddde594c034") {
+    # We keep this short because we have to refetch by issue anyway
+    issue_query_by_team = """
+      query Team {
+        team(<TEAM_ARGS>) {
+          id
+          name
+          <ISSUE_QUERY_CORE>
         }
+      }
+    """
+
+    # Sample TEAM ARGS = id: "ff155ab0-e5b3-4373-9090-0ddde594c034") {
+    # We keep this short because we have to refetch by issue anyway
+    issue_group_query = """
+      query Issues {
+          <ISSUE_QUERY_CORE>
       }
     """
 
@@ -161,6 +177,7 @@ class GqlFetchLinear(GqlFetch):
           id
           identifier
           createdAt
+          updatedAt
           startedAt
           completedAt
           title
@@ -198,12 +215,14 @@ class GqlFetchLinear(GqlFetch):
         super().__init__(endpoint, key=key, headers=headers, use_async=use_async, fetch_schema=fetch_schema, timeout=timeout)
 
     @classmethod
-    def nested_get(indict: Dict, keys: List[str]) -> Any:
+    def nested_get(indict: Mapping, keys: List[str]) -> Any:
       """
       Get a nested property from a dict.
       """
       outvalue = indict
       for key in keys:
+          if not isinstance(outvalue, (dict, Mapping)):
+              raise TypeError(f"Cannot access key '{key}' - value is not a mapping")
           outvalue = outvalue[key]
       return outvalue
 
@@ -238,19 +257,28 @@ class GqlFetchLinear(GqlFetch):
     def clean_issue(cls, issue: Mapping[str, Any]) -> Mapping[str, Any]:
         """
         Clean a single Issue.
+        Delete empty sub-dicts and hasNextPage false from Issues
         """
-        if issue.get('children', {}).get('nodes', []):
-          if (len(issue.get('children', {}).get('nodes', [])) == 0):
+        if issue.get('children', {}):
+          if (len(issue['children']['nodes']) == 0):
             del issue['children']
-        if issue.get('inverseRelations', {}).get('nodes', []):
-          if (len(issue.get('inverseRelations', {}).get('nodes', [])) == 0):
+          elif issue['children'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['children']['pageInfo']
+        if issue.get('inverseRelations', {}):
+          if (len(issue['inverseRelations'].get('nodes', [])) == 0):
             del issue['inverseRelations']
-        if issue.get('relations', {}).get('nodes', []):
-          if (len(issue.get('relations', {}).get('nodes', [])) == 0):
+          elif issue['inverseRelations'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['inverseRelations']['pageInfo']
+        if issue.get('relations', {}):
+          if (len(issue['relations'].get('nodes', [])) == 0):
             del issue['relations']
-        if issue.get('history', {}).get('nodes', []):
-          if (len(issue.get('history', {}).get('nodes', [])) == 0):
+          elif issue['relations'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['relations']['pageInfo']
+        if issue.get('history', {}):
+          if (len(issue['history'].get('nodes', [])) == 0):
             del issue['history']
+          elif issue['history'].get('pageInfo', {}).get('hasNextPage') is False:
+            del issue['history']['pageInfo']
         return issue
 
     @classmethod
@@ -258,7 +286,7 @@ class GqlFetchLinear(GqlFetch):
         """
         Clean a list of Issues.
 
-        Delete empty sub-dicts from Issues
+        Delete empty sub-dicts and hasNextPage false from Issues
         """
         for id in issues:
             issue = cls.clean_issue(issues[id])
@@ -295,7 +323,7 @@ class GqlFetchLinear(GqlFetch):
         query = self.team_query.replace("<TEAM_ARGS>", team_query_args)
         return query
 
-    def get_issues_query(self, team: str, first: int = 50, after: Optional[str] = None) -> str:
+    def get_issues_team_query(self, team: str, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a issues query for a given Team.
         """
@@ -311,8 +339,30 @@ class GqlFetchLinear(GqlFetch):
 
         issue_query_args = f"{issue_first_arg}{comma_arg}{issue_after_arg}"
         # We can't use format() here because the query is filled with curly braces
-        query = self.issue_query_by_team.replace("<TEAM_ARGS>", query_team_arg)
+        query = self.issue_query_by_team.replace("<ISSUE_QUERY_CORE>", self.issue_query_core)
+        query = query.replace("<TEAM_ARGS>", query_team_arg)
         query = query.replace("<ISSUES_ARGS>", issue_query_args)
+        # print(query)
+        return query
+
+    def get_issues_group_query(self, first: int = 50, after: Optional[str] = None) -> str:
+        """
+        Get a issues query for a given Team.
+        """
+        issue_first_arg = issue_after_arg = comma_arg = ""
+
+        if (first is not None):
+            issue_first_arg = f"first: {first}"
+        if (after is not None):
+            issue_after_arg = f'after: "{after}"'
+        if issue_first_arg != "" and issue_after_arg != "":
+            comma_arg = ", "
+
+        issue_query_args = f"{issue_first_arg}{comma_arg}{issue_after_arg}"
+        # We can't use format() here because the query is filled with curly braces
+        query = self.issue_group_query.replace("<ISSUE_QUERY_CORE>", self.issue_query_core)
+        query = query.replace("<ISSUES_ARGS>", issue_query_args)
+        # print(query)
         return query
 
     def get_issue_query(self, issue: str,
@@ -413,19 +463,19 @@ class GqlFetchLinear(GqlFetch):
             after = data['teams']['pageInfo']['endCursor']
         return data.get('teams', {}).get('nodes', [])
 
-    def get_issues_once(self, team: str, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+    def get_team_issues_once(self, team: str, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a team
         """
         if issues is None:
           issues = {}
-        query = self.get_issues_query(team, first, after)
+        query = self.get_issues_team_query(team, first, after)
         data = self.fetch_data(query)
         for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
             issues[issue['identifier']] = issue
         return data
 
-    def get_issues(self, team: str, issues: Mapping[str, Any] = None, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+    def get_team_issues(self, team: str, issues: Mapping[str, Any] = None, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a given Team.
 
@@ -437,7 +487,7 @@ class GqlFetchLinear(GqlFetch):
         if limit is not None and limit < first:
           first = limit
         while True:
-            data = self.get_issues_once(team, issues, first, after, ignore_errors)
+            data = self.get_team_issues_once(team, issues, first, after, ignore_errors)
             for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
                 # Flag that we are incomplete so we can replace later instead of having to merge
                 issue["is_full"] = False
@@ -450,6 +500,53 @@ class GqlFetchLinear(GqlFetch):
                 break
             after = data['team']['issues']['pageInfo']['endCursor']
         return issues
+
+    def get_issues_once(self, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+        """
+        Get a list of Issues for a team
+        """
+        if issues is None:
+          issues = {}
+        query = self.get_issues_group_query(first, after)
+        data = self.fetch_data(query)
+        for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
+            issues[issue['identifier']] = issue
+        return data
+
+    def get_issues(self, issues: Mapping[str, Any] = None, first = 50, batch_cb: Optional[Callable[[Mapping[str, Any], str], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+        """
+        Get a list of Issues.
+
+        We build this as a dict of issues, keyed by issue id do that we can merge the data from get_issue_all_data() later.
+
+        Note if batch_cb is provided, it will be called with the issues dict and the issue data.  In that case we will not build the issues dict.
+        """
+        if issues is None:
+          issues = {}
+        # Reset the issues dict if we are using a batch callback
+        if batch_cb is not None:
+          issues = {}
+        after = None
+        if limit is not None and limit < first:
+          first = limit
+        while True:
+          data = self.get_issues_once(issues, first, after, ignore_errors)
+          for issue in data.get('issues', {}).get('nodes', []):
+              # Flag that we are incomplete so we can replace later instead of having to merge
+              issue["is_full"] = False
+              issues[issue['identifier']] = issue
+          if batch_cb is not None:
+              endCursor = data['issues']['pageInfo']['endCursor']
+              batch_cb(issues, endCursor)
+              # Reset the issues dict for the next batch if using the callback and/or so we return an empty dict
+              issues = {}
+          if not data['issues']['pageInfo']['hasNextPage']:
+              break
+          if limit is not None and len(issues) >= limit:
+              break
+          after = data['issues']['pageInfo']['endCursor']
+        return issues
+
 
     def get_issue_all_data_once(self, issue: Mapping[str, Any],
                                 children_first: int = 50, children_after: Optional[str] = None,

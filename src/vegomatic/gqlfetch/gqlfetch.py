@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 from gql import Client, gql
+from graphql.error import GraphQLSyntaxError
 from gql.dsl import DSLField, DSLFragment, DSLInlineFragment, DSLQuery, DSLSchema
 from gql.transport.aiohttp import AIOHTTPTransport
 from gql.transport.requests import RequestsHTTPTransport
@@ -233,12 +234,19 @@ class GqlFetch:
             gql_query = gql(query)
         else:
             gql_query = query
-
         try:
             result = self.client.execute(gql_query, variable_values=variables)
         except Exception as e:
             if ignore_errors and isinstance(e, requests.exceptions.HTTPError):
                 return {}
+            elif isinstance(e, GraphQLSyntaxError):
+                print(f"GraphQLSyntaxError: {e}")
+                if isinstance(query, str):
+                    print(f"Query: {query}")
+                else:
+                    print(f"Query: {gql_query}")
+                    print(f"Variables: {variables}")
+                raise e
             else:
                 raise e
 
