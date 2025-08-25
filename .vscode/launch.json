@@ -52,6 +52,20 @@
             ]
         },
         {
+            "name": "Python Debugger: Linear Team Issues Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=teamissues",
+                # Note this is a random UUID as an example
+                "--team=57c92ffc-4c0b-4d61-a2b1-a543ff7b9f37",
+                "--limit=100",
+                "--format=table"
+            ]
+        },
+        {
             "name": "Python Debugger: Linear Single Issue Fetch",
             "type": "debugpy",
             "request": "launch",
