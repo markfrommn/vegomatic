@@ -22,6 +22,7 @@ fetch_all_outdir = None
 fetch_all_count = 0
 fetch_all_client = None
 fetch_all_throttle = None
+fetch_all_max_batch = 1 # Set max batch > 0 to avoid /0 errors and other corner cases
 
 #
 # Argparse helpers
@@ -89,8 +90,12 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
     global fetch_all_outdir
     global fetch_all_count
     global fetch_all_throttle
+    global fetch_all_max_batch
 
     batch_count = len(prbatch)
+    # Cheat and derive our baseline batch size from the largest batch we have seen so far
+    if batch_count > fetch_all_max_batch:
+        fetch_all_max_batch = batch_count
     fetch_all_count += batch_count
 
     status_endl = "\r"
@@ -106,8 +111,15 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
     dictionary_to_json_files(real_outdir, prbatch)
     print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
     if fetch_all_throttle is not None and fetch_all_throttle > 0:
-        print(f"...throttling for {fetch_all_throttle} seconds.")
-        time.sleep(fetch_all_throttle)
+        # We need to throttle the requests to avoid rate limiting
+        # If we got a small batch adjust the throttle to be a fraction of the batch size with a bit of debouncing
+        if batch_count < (fetch_all_max_batch * 0.95):
+            adjust_ratio = batch_count / fetch_all_max_batch
+        else:
+            adjust_ratio = 1.0
+        this_sleep = fetch_all_throttle * adjust_ratio
+        print(f"...throttling for {this_sleep} seconds.")
+        time.sleep(this_sleep)
 
 def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None, throttle: float = 0) -> list[dict]:
     """
@@ -136,9 +148,10 @@ def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = Non
 
     # Github PRs only exist in repository scope, so we have to iterate all repos and fetch all PRs per repo
     repos = ghclient.get_repositories(organization=prorg)
-    for repo in repos:
-        print(f"Fetching PRs for {prorg}/{repo['name']} (w/throttle={throttle}):")
-        ghclient.get_prs(organization=prorg, repository=repo['name'], limit=None, batch_cb=fetch_prs_callback)
+    for reponame, repo in repos.items():
+        assert reponame == repo['name'], f"Repository name mismatch: {reponame} != {repo['name']}"
+        print(f"Fetching PRs for {prorg}/{reponame} (w/throttle={throttle}):")
+        ghclient.get_repo_prs(organization=prorg, repository=reponame, limit=None, batch_cb=fetch_prs_callback)
     return
 
 #
@@ -173,7 +186,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if args.fetch == FetchType.ALL_PRS:
-        if args.format not in ['json', 'dirtree']:
+        if args.format not in [OutputFormat.JSON, OutputFormat.DIRTREE]:
             parser.error('Cannot use --allprs with format other than json or dirtree')
             sys.exit(1)
 

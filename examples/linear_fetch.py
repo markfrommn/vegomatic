@@ -56,6 +56,7 @@ fetch_all_fullissue = False
 fetch_all_count = 0
 fetch_all_client = None
 fetch_all_throttle = 0
+fetch_all_max_batch = 1 # Set max batch > 0 to avoid /0 errors and other corner cases
 
 def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     """
@@ -69,8 +70,11 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     global fetch_all_fullissue
     global fetch_all_count
     global fetch_all_client
+    global fetch_all_max_batch
 
     batch_count = len(issues)
+    if batch_count > fetch_all_max_batch:
+        fetch_all_max_batch = batch_count
     fetch_all_count += batch_count
 
     if fetch_all_fullissue:
@@ -94,8 +98,15 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     dictionary_to_json_files(fetch_all_outdir, issues)
     print(f"...Processed {batch_count} for {fetch_all_count} issues to {fetch_all_outdir} at cursor: {endCursor}...", end=status_endl)
     if fetch_all_throttle is not None and fetch_all_throttle > 0:
-        print(f"...throttling for {fetch_all_throttle} seconds.", end=status_endl)
-        time.sleep(fetch_all_throttle)
+        # We need to throttle the requests to avoid rate limiting
+        # If we got a small batch adjust the throttle to be a fraction of the batch size with a bit of debouncing
+        if batch_count < (fetch_all_max_batch * 0.95):
+            adjust_ratio = batch_count / fetch_all_max_batch
+        else:
+            adjust_ratio = 1.0
+        this_sleep = fetch_all_throttle * adjust_ratio
+        print(f"...throttling for {this_sleep} seconds.")
+        time.sleep(this_sleep)
 
 def example_fetch_teams(linearclient: GqlFetchLinear) -> list[dict]:
     """
@@ -171,6 +182,7 @@ def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, f
     global fetch_all_client
     global fetch_all_fullissue
     global fetch_all_throttle
+    global fetch_all_max_batch
 
     fetch_all_outdir = outdir
     fetch_all_fullissue = fullissue

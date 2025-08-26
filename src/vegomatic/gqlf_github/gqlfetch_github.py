@@ -32,6 +32,9 @@ class GqlFetchGithub(GqlFetch):
                         primaryLanguage {
                             name
                         }
+                        pullRequests {
+                            totalCount
+                       }
                     }
                     pageInfo {
                         hasNextPage
