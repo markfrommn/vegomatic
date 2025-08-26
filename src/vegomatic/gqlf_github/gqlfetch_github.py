@@ -157,10 +157,11 @@ class GqlFetchGithub(GqlFetch):
           elif pr['comments'].get('pageInfo', {}).get('hasNextPage') is False:
             del pr['comments']['pageInfo']
         if pr.get('closingIssuesReferences', {}):
-          if (len(pr['closingIssuesReferences'].get('comments', {}).get('nodes', [])) == 0):
-            del pr['closingIssuesReferences']['comments']
-          elif pr['closingIssuesReferences']['comments'].get('pageInfo', {}).get('hasNextPage') is False:
-            del pr['closingIssuesReferences']['comments']['pageInfo']
+          if pr['closingIssuesReferences'].get('comments', {}):
+            if (len(pr['closingIssuesReferences'].get('comments', {}).get('nodes', [])) == 0):
+                del pr['closingIssuesReferences']['comments']
+            elif pr['closingIssuesReferences']['comments'].get('pageInfo', {}).get('hasNextPage') is False:
+                del pr['closingIssuesReferences']['comments']['pageInfo']
           if (len(pr['closingIssuesReferences'].get('nodes', [])) == 0):
             del pr['closingIssuesReferences']
           elif pr['closingIssuesReferences'].get('pageInfo', {}).get('hasNextPage') is False:
@@ -298,7 +299,7 @@ class GqlFetchGithub(GqlFetch):
         if limit is not None and limit < first:
           first = limit
         while True:
-            data = self.get_prs_once(organization, repository, first, after, ignore_errors)
+            data = self.get_repo_prs_once(organization, repository, first, after, ignore_errors)
             for pr in data.get('repository', {}).get('pullRequests', {}).get('nodes', []):
                 prname = self.pr_permalink_to_name(pr['permalink'])
                 prs[prname] = pr

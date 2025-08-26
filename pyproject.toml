@@ -1,6 +1,6 @@
 [project]
 name = "vegomatic"
-version = "0.2.2"
+version = "0.3.0"
 description = "Veg-o-Matic is a multi-module library of various Python Utilities that I have evolved over the years. It originally started as PyDataXlate to provide a data driven field mapping of data sources that I used for various website migrations."
 authors = [
     {name = "Mark Gooderum",email = "3393412+markfrommn@users.noreply.github.com"}

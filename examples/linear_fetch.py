@@ -139,12 +139,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # We need a team if we are fetching teamissues
-    if args.fetch == 'teamissues' and args.team is None:
+    if args.fetch == FetchType.TEAM_ISSUES and args.team is None:
         parser.error('Team is required for fetching team issues')
         sys.exit(1)
 
-    if args.fetch == 'allissues':
-        if args.format not in ['json', 'dirtree']:
+    if args.fetch == FetchType.ALL_ISSUES:
+        if args.format not in [OutputFormat.JSON, OutputFormat.DIRTREE]:
             parser.error('Cannot use --allissues with format other than json or dirtree')
             sys.exit(1)
 

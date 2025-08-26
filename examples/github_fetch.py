@@ -12,6 +12,7 @@ import sys
 import os
 from typing import Mapping
 import pandas as pd
+import time
 
 from vegomatic.gqlf_github import GqlFetchGithub
 from vegomatic.datafile import dictionary_to_json_files
@@ -20,6 +21,7 @@ from vegomatic.datafile import dictionary_to_json_files
 fetch_all_outdir = None
 fetch_all_count = 0
 fetch_all_client = None
+fetch_all_throttle = None
 
 #
 # Argparse helpers
@@ -67,6 +69,8 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
     """
     global fetch_all_outdir
     global fetch_all_count
+    global fetch_all_throttle
+
     batch_count = len(prbatch)
     fetch_all_count += batch_count
 
@@ -82,17 +86,23 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
 
     dictionary_to_json_files(real_outdir, prbatch)
     print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
+    if fetch_all_throttle is not None and fetch_all_throttle > 0:
+        print(f"...throttling for {fetch_all_throttle} seconds.")
+        time.sleep(fetch_all_throttle)
 
-def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None) -> list[dict]:
+def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None, throttle: float = 0) -> list[dict]:
     global fetch_all_outdir
     global fetch_all_client
+    global fetch_all_throttle
 
     fetch_all_outdir = outdir
     fetch_all_client = ghclient
+    fetch_all_throttle = throttle
 
     # Github PRs only exist in repository scope, so we have to iterate all repos and fetch all PRs per repo
     repos = ghclient.get_repositories(organization=prorg)
     for repo in repos:
+        print(f"Fetching PRs for {prorg}/{repo['name']} (w/throttle={throttle}):")
         ghclient.get_prs(organization=prorg, repository=repo['name'], limit=None, batch_cb=fetch_prs_callback)
     return
 
@@ -117,32 +127,54 @@ if __name__ == "__main__":
     parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
     parser.add_argument('--limit', type=int, default=100, help='Stop when at least this many items have been fetched')
 
+    # Misc options
+    parser.add_argument('--throttle', type=float, default=3.0, help='Per-batch throttle in seconds')
+
     args = parser.parse_args()
 
     # We need a team if we are fetching teamissues
-    if args.fetch == 'repoprs' and args.repository is None:
+    if args.fetch == FetchType.REPO_PRS and args.repository is None:
         parser.error('Repository is required for fetching repository PRs')
         sys.exit(1)
 
-    if args.fetch == 'allprs':
+    if args.fetch == FetchType.ALL_PRS:
         if args.format not in ['json', 'dirtree']:
             parser.error('Cannot use --allprs with format other than json or dirtree')
             sys.exit(1)
 
     if args.pr is not None:
-        args.fetch = 'pr'
+        args.fetch = FetchType.PR
 
-    if args.fetch == "pr":
+    if args.fetch == FetchType.PR:
         parser.error('Cannot fetch a single PR - Not implemented')
         sys.exit(1)
 
+    if args.format == OutputFormat.DIRTREE:
+        if args.outdir is None:
+            if args.fetch == FetchType.REPOS:
+                args.outdir = "repos"
+            elif args.fetch == FetchType.REPO_PRS:
+                args.outdir = "prs-" + args.repository
+            elif args.fetch == FetchType.ALL_PRS:
+                args.outdir = "allprs"
+            elif args.fetch == FetchType.PR:
+                args.outdir = "pr"
+            else:
+                parser.error(f"Cannot use --dirtree with Unknown type {args.fetch}")
+                sys.exit(1)
+            print(f"Using default outdir: {args.outdir}")
+
     client = GqlFetchGithub()
 
+    first = 50
     if args.print_query:
+        if args.limit is not None:
+            if args.limit < first:
+                first = args.limit
         if args.fetch == FetchType.REPOS:
-            query = client.get_repository_query(organization=args.organization)
+            query = client.get_repository_query(organization=args.organization, first=first)
         elif args.fetch == FetchType.REPO_PRS:
-            query = client.get_pr_query(organization=args.organization, repository=args.repository)
+            query = client.get_pr_query(organization=args.organization, repository=args.repository, first=first)
         elif args.fetch == FetchType.ALL_PRS:
             parser.error('Cannot print query for all PRs - Not implemented')
             sys.exit()
@@ -172,13 +204,20 @@ if __name__ == "__main__":
         if args.outdir is None:
             parser.error('Cannot use --allprs without --outdir')
             sys.exit(1)
-        github_fetch_all_prs(client, args.organization, args.outdir)
+        github_fetch_all_prs(client, args.organization, args.outdir, args.throttle)
         sys.exit(0)
     elif args.fetch == FetchType.REPOS:
         retval = client.get_repositories(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
         columns = repo_columns
     elif args.fetch == FetchType.REPO_PRS:
-        retval = client.get_repo_prs(organization=args.organization, repository=args.repository, batch_cb=fetch_prs_callback, ignore_errors=args.ignore_errors, limit=args.limit)
+        # Use the callback if we are using dirtree to get progress
+        if args.format == OutputFormat.DIRTREE:
+            fetch_all_outdir = args.outdir
+            fetch_all_throttle = args.throttle
+            batch_cb = fetch_prs_callback
+        else:
+            batch_cb = None
+        retval = client.get_repo_prs(organization=args.organization, repository=args.repository, batch_cb=batch_cb, ignore_errors=args.ignore_errors, limit=args.limit)
         columns = pr_columns
     elif args.fetch == FetchType.PR:
         parser.error('Cannot fetch a single PR - Not yet implemented')
