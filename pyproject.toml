@@ -1,6 +1,6 @@
 [project]
 name = "vegomatic"
-version = "0.2.1"
+version = "0.3.0"
 description = "Veg-o-Matic is a multi-module library of various Python Utilities that I have evolved over the years. It originally started as PyDataXlate to provide a data driven field mapping of data sources that I used for various website migrations."
 authors = [
     {name = "Mark Gooderum",email = "3393412+markfrommn@users.noreply.github.com"}
@@ -11,6 +11,7 @@ dependencies = [
     "ciso8601 (>=2.3.2,<3.0.0)",
     "dumper (>=1.2.0,<2.0.0)",
     "mysql-connector-python (>=9.4.0,<10.0.0)",
+    "pandas (>=2.2.3,<3.0.0)",
     "pydal (>=20250629.2,<20250630.0)",
     "gql[all] (>=3.5.0,<4.0.0)"
 ]

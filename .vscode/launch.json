@@ -11,18 +11,86 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "justMyCode": false
         },
         {
-            "name": "Python Debugger: Github Fetch",
+            "name": "Python Debugger: Github Repos",
             "type": "debugpy",
             "request": "launch",
             "program": "examples/github_fetch.py",
             "console": "integratedTerminal",
+            "justMyCode": false,
             "args": [
-                "--organization",
-                "psols",
-                "--print-query"
+                "--organization=psols",
+                "--fetch=repos",
+                "--format=json",
+                "--limit=10"
+            ]
+        },
+        {
+            "name": "Python Debugger: Github PRs",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/github_fetch.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--organization=psols",
+                "--repository=psols-dev",
+                "--fetch=repoprs",
+                "--format=json",
+                "--limit=10"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Teams Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=teams",
+                "--format=table"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Issues Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=issues",
+                # Note this is a random UUID as an example
+                "--team=ff155ab0-e5b3-4373-9090-0ddde594c034",
+                "--limit=100",
+                "--format=table"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Team Issues Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fetch=teamissues",
+                # Note this is a random UUID as an example
+                "--team=57c92ffc-4c0b-4d61-a2b1-a543ff7b9f37",
+                "--limit=100",
+                "--format=table"
+            ]
+        },
+        {
+            "name": "Python Debugger: Linear Single Issue Fetch",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/linear_fetch.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--issue=XZY-123",
+                "--format=json"
             ]
         }
     ]
