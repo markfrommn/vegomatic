@@ -49,6 +49,7 @@ fetch_all_outdir = None
 fetch_all_fullissue = False
 fetch_all_count = 0
 fetch_all_client = None
+fetch_all_throttle = 0
 
 def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     """
@@ -82,6 +83,9 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
 
     dictionary_to_json_files(fetch_all_outdir, issues)
     print(f"...Processed {batch_count} for {fetch_all_count} issues to {fetch_all_outdir} at cursor: {endCursor}...", end=status_endl)
+    if fetch_all_throttle is not None and fetch_all_throttle > 0:
+        print(f"...throttling for {fetch_all_throttle} seconds.", end=status_endl)
+        time.sleep(fetch_all_throttle)
 
 def example_fetch_teams(linearclient: GqlFetchLinear) -> list[dict]:
     teams = linearclient.get_teams()
@@ -99,12 +103,15 @@ def example_fetch_issues(linearclient: GqlFetchLinear, limit: int = None) -> lis
     issues = linearclient.get_issues(limit=limit)
     return issues
 
-def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False) -> list[dict]:
+def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False, throttle: float = 30) -> list[dict]:
     global fetch_all_outdir
     global fetch_all_client
     global fetch_all_fullissue
+    global fetch_all_throttle
+
     fetch_all_outdir = outdir
     fetch_all_fullissue = fullissue
+    fetch_all_throttle = throttle
 
     if fullissue:
         # We need a new client for fetching full issue data while the original client is active fetching issues (GraphQL library isn't happy w/recursion)
@@ -135,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument('--print-query', action='store_true', help='Print the query')
     parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
     parser.add_argument('--limit', type=int, default=100, help='Stop when at least this many items have been fetched')
+    parser.add_argument('--throttle', type=float, default=0, help='Throttle between requests in seconds')
 
     args = parser.parse_args()
 
