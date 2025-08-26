@@ -3,10 +3,10 @@
 #
 
 from collections import namedtuple
-from typing import Union
 from types import SimpleNamespace
 from copy import copy
 import inspect
+from numbers import Number
 
 def ikeyval(inkey):
     keyval = inkey
@@ -52,7 +52,7 @@ def objlist_from_dictlist(aname: str, alist: list) -> list:
     return retlist
 
 
-def getvalue(anitem: Union[dict,object], keyprop:str):
+def getvalue(anitem: dict | object, keyprop:str):
     if inspect.isclass(type(anitem)):
         keyval = getattr(anitem, keyprop, None)
     elif type(anitem) == dict:
@@ -80,7 +80,7 @@ def dict_from_list(alist: list, keyprop: str, ignore_missing_key=True) -> dict:
     return retdict
 
 
-def list_find_by_prop(alist: list, propname: str, propval: Union[str,int,float]):
+def list_find_by_prop(alist: list, propname: str, propval: str | int | float):
     for item in alist:
         if propname not in item:
             continue
@@ -89,7 +89,7 @@ def list_find_by_prop(alist: list, propname: str, propval: Union[str,int,float])
     return None
 
 
-def is_number(s:Union(None,str)) -> bool:
+def is_number(s: None | str) -> bool:
     if s is None:
         return False
     nval = num_value(s)
@@ -98,14 +98,14 @@ def is_number(s:Union(None,str)) -> bool:
     return False
 
 
-def num_value(s:str) -> Union[float,int]:
+def num_value(s:str) -> None | float | int:
     nval = normalize_value(s)
     if isinstance(nval, (float,int)):
         return nval
     return None
 
 # Normalize simple values to integral int or float type if possible
-def normalize_value(s:Union(None,str)) -> Union[float,int,str]:
+def normalize_value(s: None | str) -> None | float | int | str:
     if isinstance(s, (None,dict,list,object)):
         return None
 
@@ -125,5 +125,47 @@ def normalize_value(s:Union(None,str)) -> Union[float,int,str]:
     return s
 
 # Return a new list sorted by the keylist from a dict
-def sort_list(adict: dict, keyseq: List(str)) -> list:
+def sort_list(adict: dict, keyseq: list[str]) -> list:
     return sorted(adict, key=lambda x: [x[key] for key in keyseq])
+
+
+def flatten_to_dict(nested_obj: dict, separator: str = "_") -> dict:
+    """
+    Flatten a nested dictionary by joining keys with a separator.
+
+    Args:
+        nested_obj: The nested dictionary to flatten
+        separator: The separator to use when joining keys (default: "_")
+
+    Returns:
+        A flattened dictionary with single-level keys
+
+    Example:
+        Input: {"level1": {"level2": "value"}}
+        Output: {"level1_level2": "value"}
+    """
+    flattened = {}
+
+    def _flatten(obj, prefix=""):
+        if not isinstance(obj, dict):
+            return
+
+        for key, value in obj.items():
+            new_key = f"{prefix}{separator}{key}" if prefix else key
+
+            if isinstance(value, dict):
+                # Recursively flatten nested dictionaries
+                _flatten(value, new_key)
+            elif isinstance(value, (Number,str,bool,bytes,bytearray)):
+                # Only include integral types
+                flattened[new_key] = value
+            elif isinstance(value, (list, tuple, range, set, frozenset, memoryview)):
+                # Lists and other "complex" objects are ignored as per requirements
+                pass
+            else:
+                # Other objects are ignored as per requirements
+                pass
+
+    _flatten(nested_obj)
+    return flattened
+

@@ -3,8 +3,8 @@
 # mapmaker - various tools to transform data
 #
 
-from datafile import dictlist_from_csv_str
-from datamap import dynobj_from_dict
+from vegomatic.datafile import dictlist_from_csv_str
+from vegomatic.datamap import dynobj_from_dict
 import ciso8601
 import time
 

@@ -8,11 +8,14 @@ from typing import List, Dict, Union
 import pprint
 
 import dumper
+import json
 from graphql import GraphQLSchema
 from vegomatic.datafile import data_to_json_file
+import pandas as pd
 
 from vegomatic.datafetch import DataFetch
 from vegomatic.datafile.fileparse import data_from_json_file
+from vegomatic.datamap import flatten_to_dict
 
 sample_data = [
     {
@@ -92,7 +95,10 @@ def example_datafetch_table(dburl: str, tablename: str, data: list[dict],  inser
 if __name__ == "__main__":
     parser = ArgumentParser(description='Data Fetch')
     parser.add_argument('--datafile', type=str, help='Path to Datafile')
-    parser.add_argument('--dburl', type=str, help='URL to Database')
+    parser.add_argument('--showdata', action='store_true', help='Show the data after load/fixup')
+    parser.add_argument('--showfields', action='store_true', help='Show the fields')
+    parser.add_argument('--createdb', action='store_true', help='Actually create the database')
+    parser.add_argument('--dburl', type=str, default=None, help='URL to Database')
     parser.add_argument('--table', type=str, help='Name of Table')
     parser.add_argument('--query', type=str, help='Query to run post create (Default SELECT * from <tablename>')
     parser.add_argument('--insertmethod', type=str, default='bulk', help='Insert method (bulk, insert, uori)')
@@ -100,11 +106,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.datafile:
-        data = data_from_json_file(args.datafile)
+        in_data = data_from_json_file(args.datafile)
         unique_fields = None
         notnull_fields = None
     else:
-        data = sample_data
+        in_data = sample_data
         unique_fields = sample_unique_fields
         notnull_fields = sample_notnull_fields
 
@@ -116,6 +122,32 @@ if __name__ == "__main__":
 
     if args.query:
         test_query = args.query
+
+    if not isinstance(in_data, list):
+        in_data = [in_data]
+
+    data = []
+    for item in in_data:
+        item = DataFetch.fix_item(item, test_table_name)
+        data.append(item)
+
+    if args.showdata:
+        print(json.dumps(data, indent=4))
+
+    if args.showfields:
+        # fields_from_dicts needs a list of dicts, not a dict
+        fields = DataFetch.fields_from_dicts(data, unique_fields, notnull_fields)
+        field_dicts = []
+        for field in fields:
+            field_dicts.append(field.__dict__)
+        columns = [ 'name', 'type', 'length', 'default', 'required', 'unique', 'notnull', 'comment' ]
+        df = pd.DataFrame(field_dicts)
+        df = df.loc[:, df.columns.isin(columns)]
+        print(df.to_string())
+
+    if not args.createdb:
+        # just testing previous stuff...
+        exit(0)
 
     datafetch = example_datafetch_table(test_db_url, test_table_name, data, args.insertmethod, unique_fields, notnull_fields)
 

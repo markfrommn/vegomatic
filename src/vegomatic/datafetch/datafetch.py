@@ -4,12 +4,14 @@ datafetch - A set of utilities for fetching data from a database.
 This module provides a simple interface for database operations using the pydal library.
 """
 
-from typing import Callable, List, Tuple, Union, Dict, Any
+from typing import Any, Dict, Mapping, Union
 from datetime import datetime
 from dateutil.parser import parse
 from pydal import DAL, Field
 # pydal buries Table in the pydal.objects module
 from pydal.objects import Table
+
+from vegomatic.datamap import flatten_to_dict
 
 # Local utility function:
 
@@ -49,6 +51,23 @@ class DataFetch:
 
     db: Union[DAL, None] = None
 
+    @classmethod
+    def fix_item(cls, item: Mapping[str, Any], tablename: str = None) -> dict:
+        """
+        Fix an item to be happier for pydal
+
+        We flatten the item to a dict, then do fixups:
+        - if a property is called 'id', we rename it to '<tablename>_id'
+        """
+        if tablename is None:
+            tablename = "item"
+        newitem = flatten_to_dict(item)
+
+        if 'id' in newitem:
+            newitem[f'{tablename}_id'] = newitem['id']
+            del newitem['id']
+        return newitem
+
     def __init__(self):
         """
         Initialize a new DataFetch instance.
@@ -73,6 +92,7 @@ class DataFetch:
             del self.db  # No real destructor/close but does free a bunch O ram
             self.db = None
         return
+
 
     def create(self, dburl: str) -> bool:
         """
@@ -199,7 +219,7 @@ class DataFetch:
         fields = []
         skip_fields = set()
         field_types = {}
-        for key in sorted(all_keys):
+        for key in all_keys: # Do not change sort
             field_types[key] = None
 
         # Infer the field types for each key
