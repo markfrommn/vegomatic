@@ -27,6 +27,7 @@ fetch_all_throttle = None
 # Argparse helpers
 #
 class OutputFormat(Enum):
+    """Enumeration of available output formats for data export."""
     LIST = 'list'
     TABLE = 'table'
     JSON = 'json'
@@ -34,38 +35,56 @@ class OutputFormat(Enum):
     DIRTREE = 'dirtree'
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return string representation of the enum value."""
         return self.value
 
 class FetchType(Enum):
+    """Enumeration of available fetch types for GitHub data."""
     REPOS = 'repos'
     REPO_PRS = 'repoprs'
     ALL_PRS = 'allprs'
     PR = 'pr'
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return string representation of the enum value."""
         return self.value
 
 #
 # Pretty print helper - Not used but saved for posterity
 #
 def pretty_print(clas, indent=0):
-    print(' ' * indent +  type(clas).__name__ +  ':')
+    """
+    Print a class object in a formatted, indented structure.
+
+    Args:
+        clas: The class object to print
+        indent: Current indentation level (default: 0)
+    """
+    print(' ' * indent + type(clas).__name__ + ':')
     indent += 4
-    for k,v in clas.__dict__.items():
+    for k, v in clas.__dict__.items():
         if '__dict__' in dir(v):
-            pretty_print(v,indent)
+            pretty_print(v, indent)
         else:
-            print(' ' * indent +  k + ': ' + str(v))
+            print(' ' * indent + k + ': ' + str(v))
 
 def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, endCursor: str) -> None:
     """
-    Callback for fetching PRs.
+    Callback function for processing batches of pull requests during pagination.
+
+    Args:
+        prbatch: Dictionary mapping PR names to PR data
+        prorg: GitHub organization name
+        prrepo: GitHub repository name
+        endCursor: The cursor position after this batch
     """
     global fetch_all_outdir
     global fetch_all_count
@@ -91,6 +110,22 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
         time.sleep(fetch_all_throttle)
 
 def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None, throttle: float = 0) -> list[dict]:
+    """
+    Fetch all pull requests for a GitHub organization with batch processing.
+
+    Args:
+        ghclient: The GitHub GraphQL client instance
+        prorg: GitHub organization name
+        outdir: Output directory for saving PR data
+        throttle: Throttle time between requests in seconds
+
+    Returns:
+        list[dict]: List of pull request dictionaries
+
+    Note:
+        This function uses global variables to manage state during batch processing.
+        It processes PRs in batches and saves them to the specified output directory.
+    """
     global fetch_all_outdir
     global fetch_all_client
     global fetch_all_throttle

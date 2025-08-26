@@ -46,10 +46,17 @@ class GqlFetch:
 
         Args:
             endpoint: The GraphQL endpoint URL
+            token: Optional authentication token (Bearer token)
+            key: Optional authentication key (API key)
             headers: Optional headers to include in requests
             use_async: Whether to use async transport (aiohttp) or sync (requests)
             fetch_schema: Whether to fetch the schema from the endpoint
             timeout: Request timeout in seconds
+
+        Note:
+            If token or key are not provided, they will be attempted to be loaded
+            from environment variables GRAPHQL_TOKEN and GRAPHQL_KEY respectively.
+            Token takes precedence over key for Authorization header.
         """
         self.endpoint = endpoint
         self.token = token
@@ -72,9 +79,16 @@ class GqlFetch:
         self.transport = None
         self.client = None
 
-    def connect(self):
+    def connect(self) -> None:
         """
-        Connect to the GraphQL endpoint.
+        Connect to the GraphQL endpoint and initialize the client.
+
+        This method creates the transport layer and client, and optionally
+        fetches the GraphQL schema for DSL support.
+
+        Note:
+            For sync clients, this will fetch the schema immediately.
+            For async clients, schema fetching is deferred until first use.
         """
         # Create transport
         if self.use_async:
@@ -104,12 +118,17 @@ class GqlFetch:
                 self.client.close_sync()
         return
 
-    def set_dsl_schema(self, dsl_schema: DSLSchema = None) -> None:
+    def set_dsl_schema(self, dsl_schema: Optional[DSLSchema] = None) -> None:
         """
         Set the DSL schema for building queries dynamically.
 
         Args:
-            schema: The DSL schema instance
+            dsl_schema: The DSL schema instance. If None, creates schema from client.
+
+        Note:
+            If dsl_schema is None, this method will create a DSLSchema from
+            the client's GraphQL schema. This requires the client to be connected
+            and have a valid schema.
         """
         if dsl_schema is None:
             self.dsl_schema = DSLSchema(self.client.schema)
@@ -219,12 +238,18 @@ class GqlFetch:
             query: GraphQL query string or DSL query object
             variables: Variables to pass with the query
             extract_path: Optional path to extract specific data from response
+            ignore_errors: Whether to ignore HTTP errors and return empty dict
             page_info_path: Path to pageInfo in the response
             edges_path: Path to edges in the response
             nodes_path: Path to nodes in the response
 
         Returns:
             Dictionary containing the response data
+
+        Raises:
+            RuntimeError: If called on async client
+            GraphQLSyntaxError: If query has syntax errors
+            requests.exceptions.HTTPError: If HTTP request fails (unless ignore_errors=True)
         """
         if self.use_async:
             raise RuntimeError("Use fetch_data_async for async operations")
@@ -280,12 +305,17 @@ class GqlFetch:
             query: GraphQL query string or DSL query object
             variables: Variables to pass with the query
             extract_path: Optional path to extract specific data from response
+            ignore_errors: Whether to ignore HTTP errors and return empty dict
             page_info_path: Path to pageInfo in the response
             edges_path: Path to edges in the response
             nodes_path: Path to nodes in the response
 
         Returns:
             Dictionary containing the response data
+
+        Raises:
+            RuntimeError: If called on sync client
+            requests.exceptions.HTTPError: If HTTP request fails (unless ignore_errors=True)
         """
         if not self.use_async:
             raise RuntimeError("Use fetch_data for sync operations")
@@ -461,23 +491,61 @@ class GqlFetch:
         return self.dsl_schema.query(query_name, **kwargs)
 
     def close(self) -> None:
-        """Close the client and transport."""
+        """
+        Close the client and transport.
+
+        This method closes the underlying transport connection and cleans up
+        any resources associated with the client.
+        """
         if hasattr(self.transport, 'close'):
             self.transport.close()
 
     async def aclose(self) -> None:
-        """Close the client and transport asynchronously."""
+        """
+        Close the client and transport asynchronously.
+
+        This method asynchronously closes the underlying transport connection
+        and cleans up any resources associated with the client.
+        """
         if hasattr(self.transport, 'aclose'):
             await self.transport.aclose()
 
     def __enter__(self):
+        """
+        Enter the context manager for synchronous operations.
+
+        Returns:
+            self: The GqlFetch instance
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the context manager for synchronous operations.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception value if an exception occurred
+            exc_tb: Exception traceback if an exception occurred
+        """
         self.close()
 
     async def __aenter__(self):
+        """
+        Enter the context manager for asynchronous operations.
+
+        Returns:
+            self: The GqlFetch instance
+        """
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the context manager for asynchronous operations.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception value if an exception occurred
+            exc_tb: Exception traceback if an exception occurred
+        """
         await self.aclose()

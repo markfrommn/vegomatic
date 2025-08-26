@@ -19,6 +19,7 @@ from vegomatic.gqlf_linear import GqlFetchLinear
 
 # argparse helpers
 class OutputFormat(Enum):
+    """Enumeration of available output formats for data export."""
     LIST = 'list'
     TABLE = 'table'
     JSON = 'json'
@@ -26,12 +27,15 @@ class OutputFormat(Enum):
     DIRTREE = 'dirtree'
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return string representation of the enum value."""
         return self.value
 
 class FetchType(Enum):
+    """Enumeration of available fetch types for Linear data."""
     TEAMS = 'teams'
     ISSUES = 'issues'
     ISSUE = 'issue'
@@ -39,9 +43,11 @@ class FetchType(Enum):
     ALL_ISSUES = 'allissues'
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return string representation of the enum value."""
         return self.value
 
 # State for fetch all issues
@@ -53,7 +59,11 @@ fetch_all_throttle = 0
 
 def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     """
-    Callback for fetching issues.
+    Callback function for processing batches of issues during pagination.
+
+    Args:
+        issues: Dictionary mapping issue IDs to issue data
+        endCursor: The cursor position after this batch
     """
     global fetch_all_outdir
     global fetch_all_fullissue
@@ -88,22 +98,75 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
         time.sleep(fetch_all_throttle)
 
 def example_fetch_teams(linearclient: GqlFetchLinear) -> list[dict]:
+    """
+    Example function to fetch all teams from Linear.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+
+    Returns:
+        list[dict]: List of team dictionaries
+    """
     teams = linearclient.get_teams()
     return teams
 
 def example_fetch_issue(linearclient: GqlFetchLinear, issueid: str) -> dict:
+    """
+    Example function to fetch a single issue from Linear.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+        issueid: The ID of the issue to fetch
+
+    Returns:
+        dict: Issue data dictionary
+    """
     efissue = linearclient.get_issue_all_data(issueid)
     return efissue
 
 def example_fetch_team_issues(linearclient: GqlFetchLinear, team: str, limit: int = None) -> list[dict]:
+    """
+    Example function to fetch issues for a specific team from Linear.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+        team: The team name or ID to fetch issues for
+        limit: Optional limit on the number of issues to fetch
+
+    Returns:
+        list[dict]: List of issue dictionaries
+    """
     efissues = linearclient.get_team_issues(team, limit=limit)
     return efissues
 
 def example_fetch_issues(linearclient: GqlFetchLinear, limit: int = None) -> list[dict]:
+    """
+    Example function to fetch all issues from Linear.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+        limit: Optional limit on the number of issues to fetch
+
+    Returns:
+        list[dict]: List of issue dictionaries
+    """
     issues = linearclient.get_issues(limit=limit)
     return issues
 
-def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False, throttle: float = 30) -> list[dict]:
+def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False, throttle: float = 30) -> None:
+    """
+    Example function to fetch all issues from Linear with batch processing.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+        outdir: Output directory for saving issue data
+        fullissue: Whether to fetch full issue data (requires additional API calls)
+        throttle: Throttle time between requests in seconds
+
+    Note:
+        This function uses global variables to manage state during batch processing.
+        It processes issues in batches and saves them to the specified output directory.
+    """
     global fetch_all_outdir
     global fetch_all_client
     global fetch_all_fullissue

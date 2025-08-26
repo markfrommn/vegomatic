@@ -12,16 +12,28 @@ from graphql import GraphQLSchema
 from vegomatic.gqlfetch import GqlFetch
 
 def pretty_print(clas, indent=0):
-    print(' ' * indent +  type(clas).__name__ +  ':')
+    """
+    Print a class object in a formatted, indented structure.
+
+    Args:
+        clas: The class object to print
+        indent: Current indentation level (default: 0)
+    """
+    print(' ' * indent + type(clas).__name__ + ':')
     indent += 4
-    for k,v in clas.__dict__.items():
+    for k, v in clas.__dict__.items():
         if '__dict__' in dir(v):
-            pretty_print(v,indent)
+            pretty_print(v, indent)
         else:
-            print(' ' * indent +  k + ': ' + str(v))
+            print(' ' * indent + k + ': ' + str(v))
 
 def example_sync_fetch() -> GraphQLSchema:
-    """Example of synchronous data fetching."""
+    """
+    Example of synchronous data fetching.
+
+    Returns:
+        GraphQLSchema: The DSL schema from the GraphQL endpoint
+    """
     print("=== Synchronous Fetch Example ===")
 
     # Create a GqlFetch instance
@@ -57,7 +69,12 @@ def example_sync_fetch() -> GraphQLSchema:
 
 
 async def example_async_fetch() -> GraphQLSchema:
-    """Example of asynchronous data fetching."""
+    """
+    Example of asynchronous data fetching.
+
+    Returns:
+        GraphQLSchema: The DSL schema from the GraphQL endpoint
+    """
     print("\n=== Asynchronous Fetch Example ===")
 
     # Create an async GqlFetch instance
@@ -93,7 +110,12 @@ async def example_async_fetch() -> GraphQLSchema:
 
 
 def example_data_extraction():
-    """Example of data extraction from nested responses."""
+    """
+    Example of data extraction from nested responses.
+
+    Demonstrates how to extract specific data from nested GraphQL responses
+    using the extract_path parameter.
+    """
     print("\n=== Data Extraction Example ===")
 
     client = GqlFetch(
@@ -134,7 +156,11 @@ def example_data_extraction():
 
 
 def example_page_info():
-    """Example of PageInfo usage."""
+    """
+    Example of PageInfo usage.
+
+    Demonstrates how to create and use PageInfo objects for pagination.
+    """
     print("\n=== PageInfo Example ===")
 
     from vegomatic.gqlfetch import PageInfo
@@ -155,10 +181,16 @@ def example_page_info():
 
 
 def example_dsl_schema(dsl_schema):
+    """
+    Example of DSL schema exploration.
+
+    Args:
+        dsl_schema: The GraphQL schema to explore and print
+    """
     dumper.max_depth = 20
     dumper.instance_dump = 'all'
     pprint.pprint(dsl_schema.query_type.fields)
-    #dumper.dump(dsl_schema)
+    # dumper.dump(dsl_schema)
 
 if __name__ == "__main__":
     # Run sync example
