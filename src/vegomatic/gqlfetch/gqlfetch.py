@@ -259,6 +259,7 @@ class GqlFetch:
             gql_query = gql(query)
         else:
             gql_query = query
+
         try:
             result = self.client.execute(gql_query, variable_values=variables)
         except Exception as e:
