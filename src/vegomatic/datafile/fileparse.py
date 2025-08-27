@@ -252,7 +252,7 @@ def data_to_json_file(filepath: str, odata: Union[dict, list[dict]]) -> None:
     json.dump(odata, jsonfile, sort_keys=True, indent=4)
     jsonfile.close()
 
-def dictionary_to_json_files(dirpath: str, adict: Mapping[str, dict]) -> None:
+def dict_to_json_files(dirpath: str, adict: Mapping[str, dict]) -> None:
     """
     Write a dictionary to a directory of JSON files.
 

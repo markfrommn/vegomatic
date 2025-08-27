@@ -13,5 +13,5 @@ from .fileparse import dictlist_from_csv_stream
 from .fileparse import column_from_csv_str
 from .fileparse import column_from_csv_file
 from .fileparse import data_to_json_file
-from .fileparse import dictionary_to_json_files
+from .fileparse import dict_to_json_files
 

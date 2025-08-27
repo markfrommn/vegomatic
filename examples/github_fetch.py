@@ -15,7 +15,7 @@ import pandas as pd
 import time
 
 from vegomatic.gqlf_github import GqlFetchGithub
-from vegomatic.datafile import dictionary_to_json_files
+from vegomatic.datafile import dict_to_json_files
 
 # State for fetch all PRs
 fetch_all_outdir = None
@@ -100,7 +100,7 @@ def fetch_prs_callback(prbatch: List[Mapping], prorg: str, prrepo: str, endCurso
         fetch_all_max_batch = batch_count
     fetch_all_count += batch_count
 
-    status_endl = "\r"
+    status_endl = "\n"
     for pr in prbatch:
         pr = GqlFetchGithub.clean_pr(pr)
         prdict[pr['pr_id']] = pr
@@ -110,7 +110,7 @@ def fetch_prs_callback(prbatch: List[Mapping], prorg: str, prrepo: str, endCurso
 
     real_outdir = os.path.join(fetch_all_outdir, prrepo)
 
-    dictionary_to_json_files(real_outdir, prdict)
+    dict_to_json_files(real_outdir, prdict)
     print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
     if fetch_all_throttle is not None and fetch_all_throttle > 0:
         # We need to throttle the requests to avoid rate limiting
@@ -123,7 +123,7 @@ def fetch_prs_callback(prbatch: List[Mapping], prorg: str, prrepo: str, endCurso
         print(f"...throttling for {this_sleep} seconds.")
         time.sleep(this_sleep)
 
-def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None, throttle: float = 0) -> list[dict]:
+def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = None, throttle: float = 0, first: int = 50) -> list[dict]:
     """
     Fetch all pull requests for a GitHub organization with batch processing.
 
@@ -153,7 +153,7 @@ def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = Non
     for reponame, repo in repos.items():
         assert reponame == repo['name'], f"Repository name mismatch: {reponame} != {repo['name']}"
         print(f"Fetching PRs for {prorg}/{reponame} (w/throttle={throttle}):")
-        ghclient.get_repo_prs(organization=prorg, repository=reponame, limit=None, batch_cb=fetch_prs_callback)
+        ghclient.get_repo_prs(organization=prorg, repository=reponame, limit=None, batch_cb=fetch_prs_callback, first=first)
     return
 
 #
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     parser.add_argument('--print-query', action='store_true', help='Print the query')
     parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
     parser.add_argument('--limit', type=int, default=None, help='Stop when at least this many items have been fetched')
+    parser.add_argument('--first', type=int, default=50, help='Fetch N items at a time')
 
     # Misc options
     parser.add_argument('--throttle', type=float, default=3.0, help='Per-batch throttle in seconds')
@@ -259,13 +260,13 @@ if __name__ == "__main__":
         if args.outdir is None:
             parser.error('Cannot use --allprs without --outdir')
             sys.exit(1)
-        github_fetch_all_prs(client, args.organization, args.outdir, args.throttle)
+        github_fetch_all_prs(client, args.organization, args.outdir, args.throttle, args.first)
         sys.exit(0)
     elif args.fetch == FetchType.MEMBERS:
-        retval = client.get_org_members(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
+        retval = client.get_org_members(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit, first=args.first)
         columns = member_columns
     elif args.fetch == FetchType.REPOS:
-        retval = client.get_repositories(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
+        retval = client.get_repositories(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit, first=args.first)
         columns = repo_columns
     elif args.fetch == FetchType.REPO_PRS:
         # Use the callback if we are using dirtree to get progress
@@ -303,7 +304,7 @@ if __name__ == "__main__":
     elif args.format == OutputFormat.TABLE or args.format == OutputFormat.LIST:
         print(df.to_string(),file=outfile)
     elif args.format == OutputFormat.DIRTREE:
-        dictionary_to_json_files(args.outdir, retval)
+        dict_to_json_files(args.outdir, retval)
     else:
         print("Unknown format: ", args.format)
 

@@ -297,6 +297,10 @@ class GqlFetchGithub(GqlFetch):
         if limit is not None and limit < first:
           first = limit
         while True:
+            if limit is not None and limit < (first + len(repositorylist)):
+                first = limit - len(repositorylist)
+            if first < 1:
+                break
             data = self.get_repositories_once(organization, first, after, ignore_errors)
             newrepos = data.get('organization', {}).get('repositories', {}).get('nodes', [])
             after = data['organization']['repositories']['pageInfo']['endCursor']
@@ -349,6 +353,10 @@ class GqlFetchGithub(GqlFetch):
         if limit is not None and limit < first:
           first = limit
         while True:
+            if limit is not None and limit < (first + len(memberlist)):
+                first = limit - len(memberlist)
+            if first < 1:
+                break
             data = self.get_org_members_once(organization, first, after, ignore_errors)
             newmembers = data.get('organization', {}).get('membersWithRole', {}).get('edges', [])
             after = data['organization']['membersWithRole']['pageInfo']['endCursor']
@@ -407,10 +415,16 @@ class GqlFetchGithub(GqlFetch):
         after = None
         if limit is not None and limit < first:
           first = limit
+        # We keep an explicit count so limit/first logic works for the case of batch_cb
+        prcount = 0
         while True:
+            if limit is not None and limit < (first + prcount):
+                first = limit - prcount
+            if first < 1:
+                break
             data = self.get_repo_prs_once(organization, repository, first, after, ignore_errors)
             prnew = data.get('repository', {}).get('pullRequests', {}).get('nodes', [])
-
+            prcount += len(prnew)
             # Add keys for owner, repository and a fake PR-id
             owner = data['repository']['owner']['login']
             repo = data['repository']['name']
@@ -426,6 +440,8 @@ class GqlFetchGithub(GqlFetch):
             hasmore = data['repository']['pullRequests']['pageInfo']['hasNextPage']
             if batch_cb is not None:
                 batch_cb(prnew, owner, repo, endCursor)
+                # Clear the list for the next batch
+                prlist = prnew = []
             else:
                 prlist.extend(prnew)
             if not hasmore:
@@ -434,8 +450,9 @@ class GqlFetchGithub(GqlFetch):
                 break
             after = endCursor
         prs = {}
-        for pr in prlist:
-            prs[pr['pr_id']] = pr
+        if batch_cb is not None:
+            for pr in prlist:
+                prs[pr['pr_id']] = pr
         return prs
 
 
