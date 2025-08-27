@@ -114,7 +114,35 @@ class DataFetch:
         >>> df.create("sqlite://storage.db")
         True
         """
-        self.db = DAL(dburl)
+
+        # The way pydal works is that it will create the database if it doesn't exist, so this is just an alias for open()
+        return self.open(dburl)
+
+    def open(self, dburl: str) -> bool:
+        """
+        Open a new database connection.
+
+        Parameters
+        ----------
+        dburl : str
+            The database URL string in pydal format
+
+        Returns
+        -------
+        bool
+            True if the connection was successfully created
+
+        Examples
+        --------
+        >>> df = DataFetch()
+        >>> df.create("sqlite://storage.db")
+        True
+        """
+        if self.db is None:
+            # We need to force entity_quoting with mixed case joy on Postgres as least
+            self.db = DAL(dburl, entity_quoting=False)
+        if self.db is None:
+            return False
         return True
 
     def get_table(self, tablename: str) -> Table | None:
@@ -168,7 +196,6 @@ class DataFetch:
         """
         if self.db is None:
             raise RuntimeError("No database connection. Call create() first.")
-
 
         # Create the table using pydal
         self.db.define_table(table_name, fields=schema, migrate=True)
@@ -238,7 +265,14 @@ class DataFetch:
                     field_types[key] = new_field_type
                 # if we have already inferred the field type, check if it is consistent
                 elif field_types[key] != new_field_type:
-                    raise ValueError(f"Inconsistent field types for key {key}: {field_types[key]} != {new_field_type}")
+                    # It is okay to go from string to text, but not the other way around
+                    if field_types[key] == 'string' and new_field_type == 'text':
+                        field_types[key] = 'text'
+                    elif field_types[key] == 'text' and new_field_type == 'string':
+                        # Leave as text
+                        pass
+                    else:
+                        raise ValueError(f"Inconsistent field types for key {key}: {field_types[key]} != {new_field_type}")
 
         # Now remove the fields that we can't handle
         for key in skip_fields:
@@ -333,6 +367,10 @@ class DataFetch:
             return 'integer'
         except ValueError:
             pass
+
+        # If it's longer than 512 make it text
+        if len(value) >= 512:
+            return 'text'
 
         # Default to string for everything else
         return 'string'

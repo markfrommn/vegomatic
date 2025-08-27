@@ -29,6 +29,11 @@ class GqlFetchGithub(GqlFetch):
                         isDisabled
                         isLocked
                         isPrivate
+                        isFork
+                        owner {
+                            id
+                            login
+                        }
                         primaryLanguage {
                             name
                         }
@@ -71,6 +76,13 @@ class GqlFetchGithub(GqlFetch):
                         }
                         author {
                             login
+                        }
+                        repository {
+                            name
+                            owner {
+                                id
+                                login
+                            }
                         }
                         comments (<CIR_ARGS>) {
                             totalCount
@@ -303,9 +315,16 @@ class GqlFetchGithub(GqlFetch):
           first = limit
         while True:
             data = self.get_repo_prs_once(organization, repository, first, after, ignore_errors)
+            # Add keys for owner, repository and a fake PR-id
+            data['owner'] = data['repository']['owner']['login']
+            data['repository'] = data['repository']['name']
+            data['prid'] = f"{repository}-{str(data['number'])}"
             for pr in data.get('repository', {}).get('pullRequests', {}).get('nodes', []):
                 prname = self.pr_permalink_to_name(pr['permalink'])
-                prs[prname] = pr
+                prs[prname] = pr.copy()
+                prs[prname]['owner'] = data['owner']
+                prs[prname]['repository'] = data['repository']
+                prs[prname]['id'] = prname
             if batch_cb is not None:
                 endCursor = data['repository']['pullRequests']['pageInfo']['endCursor']
                 batch_cb(prs, organization, repository, endCursor)

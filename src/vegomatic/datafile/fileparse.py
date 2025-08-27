@@ -92,7 +92,7 @@ def dicts_from_files(afileset: FileSet, keyprop: str, filetype="kvp") -> Tuple[d
     Args:
         afileset: FileSet containing the files to parse
         keyprop: Property name to use as the dictionary key
-        filetype: Type of file to parse ("kvp" or "url")
+        filetype: Type of file to parse ("kvp" or "url" or "json")
 
     Returns:
         Tuple[dict, list]: Tuple containing (dictionary of parsed data, list of items without keys)
@@ -104,20 +104,29 @@ def dicts_from_files(afileset: FileSet, keyprop: str, filetype="kvp") -> Tuple[d
         ffunc = dict_from_kvpfile
     elif "url" == filetype:
         ffunc = dict_from_urlfile
+    elif "json" == filetype:
+        ffunc = data_from_json_file
     else:
         print("Unknown file type {}\n".format(filetype))
         raise NotImplementedError
     dicts = {}
     nokeys = []
     for path in afileset:
-        kvpset = ffunc(path)
-        if keyprop in kvpset:
-            # Force keys to string so the dict is sortable
-            # Some PP txn IDs will be all digits so will be int/floats by default
-            dkey = str(kvpset[keyprop])
-            dicts[dkey] = kvpset
+        #print(f"Parsing {path}...")
+        inthing = ffunc(path)
+        if "kvp" == filetype or "url" == filetype:
+            if keyprop in inthing:
+                # Force keys to string so the dict is sortable
+                # Some PP txn IDs will be all digits so will be int/floats by default
+                dkey = str(inthing[keyprop])
+                dicts[dkey] = inthing
+            else:
+                nokeys.append(inthing)
+        elif "json" == filetype:
+            dkey = str(inthing[keyprop])
+            dicts[dkey] = inthing
         else:
-            nokeys.append(kvpset)
+            dicts[path] = inthing
     return  (dicts, nokeys)
 
 

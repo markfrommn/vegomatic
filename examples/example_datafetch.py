@@ -4,13 +4,13 @@ Simple example demonstrating the DataFetch module.
 """
 
 from argparse import ArgumentParser
-from typing import List, Dict, Union
+from typing import List, Mapping, Union
 import pprint
 
 import dumper
 import json
 from graphql import GraphQLSchema
-from vegomatic.datafile import data_to_json_file
+from vegomatic.datafile import FileSet, dicts_from_files
 import pandas as pd
 
 from vegomatic.datafetch import DataFetch
@@ -95,6 +95,10 @@ def example_datafetch_table(dburl: str, tablename: str, data: list[dict],  inser
 if __name__ == "__main__":
     parser = ArgumentParser(description='Data Fetch')
     parser.add_argument('--datafile', type=str, help='Path to Datafile')
+    parser.add_argument('--datafileset', type=str, help='Glob to Datafile')
+    parser.add_argument('--datafilekey', type=str, default='id', help='Datafile ID Key')
+    parser.add_argument('--datakeys', type=str, default='id,identifier', help='Datafile Unique Keys')
+    parser.add_argument('--notnullkeys', type=str, default=None, help='Datafile Not Null Keys')
     parser.add_argument('--showdata', action='store_true', help='Show the data after load/fixup')
     parser.add_argument('--showfields', action='store_true', help='Show the fields')
     parser.add_argument('--createdb', action='store_true', help='Actually create the database')
@@ -105,10 +109,26 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.datafile:
+    if args.datafile and not args.datafileset:
         in_data = data_from_json_file(args.datafile)
         unique_fields = None
         notnull_fields = None
+    elif args.datafileset:
+        fileset = FileSet()
+        fileset.glob(args.datafile, args.datafileset, True)
+        print(f"Found {len(fileset.filepaths)} files from {args.datafileset}")
+        if args.datakeys is not None:
+            unique_fields = args.datakeys.split(',')
+        else:
+            unique_fields = None
+        if args.notnullkeys is not None:
+            notnull_fields = args.notnullkeys.split(',')
+        else:
+            notnull_fields = None
+        nokeys = []
+        ( in_data, nokeys) = dicts_from_files(fileset, args.datafilekey, "json")
+        print(f"Found {len(in_data)} items from {args.datafileset}")
+        print(f"Found {len(nokeys)} items without keys from {args.datafileset}")
     else:
         in_data = sample_data
         unique_fields = sample_unique_fields
@@ -123,10 +143,16 @@ if __name__ == "__main__":
     if args.query:
         test_query = args.query
 
-    if not isinstance(in_data, list):
+    # Listify our arguments from single instance or dict
+    if isinstance(in_data, Mapping):
+        in_data = in_data.values()
+    elif not isinstance(in_data, list):
         in_data = [in_data]
-
+    #print(json.dumps(in_data, indent=4))
     data = []
+    #for item in in_data:
+    #    print(f"Item: {item}")
+
     for item in in_data:
         item = DataFetch.fix_item(item, test_table_name)
         data.append(item)

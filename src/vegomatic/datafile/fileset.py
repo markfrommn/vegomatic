@@ -18,10 +18,11 @@ class FileSet:
         self.filepaths = []
         self.dirpath = ""
         self.globstr = "*.*"
+        self.recursive = False
         self.fullpath = ""
         self.iteridx = -1
 
-    def glob(self, dirpath: str, globstr="*.*") -> int:
+    def glob(self, dirpath: str, globstr="*.*", recursive: bool = False) -> int:
         """
         Populate the FileSet with files matching a glob pattern.
 
@@ -37,12 +38,24 @@ class FileSet:
         """
         self.dirpath = dirpath
         self.globstr = globstr
+        self.recursive = recursive
+
         if not os.path.isdir(self.dirpath):
             return None
         self.fullpath = "{}/{}".format(self.dirpath, self.globstr)
-        fileiter = glob.iglob(self.fullpath)
+        fileiter = glob.iglob(self.fullpath, recursive=False)
         for path in fileiter:
-            self.filepaths.append(path)
+            if os.path.isfile(path):
+                # print(f"Found file: {path}")
+                self.filepaths.append(path)
+        # Now iterate recursively through any subdirectories
+        dirfullpath = "{}/{}".format(dirpath, "*")
+        diriter = glob.iglob(dirfullpath, recursive=False)
+        for dpath in diriter:
+            if os.path.isdir(dpath):
+                #subdir = os.path.join(dirpath, dpath)
+                # print(f"Found subdir: {dpath}")
+                self.glob(dpath, self.globstr, recursive=False)
         return len(self.filepaths)
 
     def clear(self) -> None:
