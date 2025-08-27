@@ -108,7 +108,7 @@ def fetch_prs_callback(prbatch: List[Mapping], prorg: str, prrepo: str, endCurso
     # We need an outdir to save the PRs
     assert fetch_all_outdir is not None, 'fetch_all_outdir is not set'
 
-    real_outdir = os.path.join(fetch_all_outdir, prorg, prrepo)
+    real_outdir = os.path.join(fetch_all_outdir, prrepo)
 
     dictionary_to_json_files(real_outdir, prdict)
     print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
