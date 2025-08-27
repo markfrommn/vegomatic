@@ -91,7 +91,7 @@ def fetch_issues_callback(issuelist: List[Mapping[str, Any]], endCursor: str) ->
             print(".", end="", flush=True)
             # Linear has a rate limit of 1500 requests per hour, so we sleep for 2.7 seconds per request to be safe
             issue = newissue
-            time.sleep(.27)
+            time.sleep(2.7)
         issue = GqlFetchLinear.clean_issue(issue)
         issues[issueid] = issue
 
