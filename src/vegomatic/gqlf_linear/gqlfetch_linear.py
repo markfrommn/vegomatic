@@ -3,6 +3,7 @@ GqlFetch-linear module for fetching data from the Linear GraphQL endpoint with p
 """
 
 from typing import Any, Callable, Dict, List, Mapping, Optional
+import json
 
 from vegomatic.gqlfetch import GqlFetch
 class GqlFetchLinear(GqlFetch):
@@ -12,12 +13,43 @@ class GqlFetchLinear(GqlFetch):
     # The base query for teams in a Linear Organization.
     team_query = """
       query Teams {
-        teams {
+        teams (<TEAM_ARGS>) {
           nodes {
             id
             key
             displayName
             name
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    """
+
+    """
+    A GraphQL query for fetching Users from the Linear.app GraphQL endpoint with pagination support.
+    """
+    # The base query for users in a Linear Organization.
+    user_query = """
+      query Users {
+        users(<USER_ARGS>) {
+          nodes {
+            id
+            name
+            email
+            active
+            app
+            gitHubUserId
+            displayName
+            createdAt
+            updatedAt
+            lastSeen
+            createdIssueCount
+            statusLabel
+            url
+            description
           }
           pageInfo {
             hasNextPage
@@ -35,13 +67,19 @@ class GqlFetchLinear(GqlFetch):
             nodes {
               id
               identifier
-              createdAt
-              updatedAt
-              startedAt
-              completedAt
               title
               description
+              createdAt
+              startedAt
+              completedAt
+              updatedAt
+              archivedAt
               url
+              activitySummary
+              state {
+                id
+                name
+              }
             }
             pageInfo {
                 hasNextPage
@@ -176,14 +214,19 @@ class GqlFetchLinear(GqlFetch):
         issue(<ISSUE_ARGS>) {
           id
           identifier
-          createdAt
-          updatedAt
-          startedAt
-          completedAt
           title
           description
+          createdAt
+          startedAt
+          completedAt
+          updatedAt
+          archivedAt
           url
           activitySummary
+          state {
+            id
+            name
+          }
           parent {
             id
             identifier
@@ -305,7 +348,7 @@ class GqlFetchLinear(GqlFetch):
         """
         super().close()
 
-    def get_team_query(self, first: int = 50, after: Optional[str] = None) -> str:
+    def get_teams_query(self, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a query for a teams visible to the user.
         """
@@ -323,7 +366,25 @@ class GqlFetchLinear(GqlFetch):
         query = self.team_query.replace("<TEAM_ARGS>", team_query_args)
         return query
 
-    def get_issues_team_query(self, team: str, first: int = 50, after: Optional[str] = None) -> str:
+    def get_users_query(self, first: int = 50, after: Optional[str] = None) -> str:
+        """
+        Get a query for a users in a Linear Organization.
+        """
+        user_first_arg = user_after_arg = comma_arg = ""
+
+        if (first is not None):
+            user_first_arg = f"first: {first}"
+        if (after is not None):
+            user_after_arg = f'after: "{after}"'
+        if user_first_arg != "" and user_after_arg != "":
+            comma_arg = ", "
+
+        user_query_args = f"{user_first_arg}{comma_arg}{user_after_arg}"
+        # We can't use format() here because the query is filled with curly braces
+        query = self.user_query.replace("<USER_ARGS>", user_query_args)
+        return query
+
+    def get_team_issues_query(self, team: str, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a issues query for a given Team.
         """
@@ -345,7 +406,7 @@ class GqlFetchLinear(GqlFetch):
         # print(query)
         return query
 
-    def get_issues_group_query(self, first: int = 50, after: Optional[str] = None) -> str:
+    def get_issues_query(self, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a issues query for a given Team.
         """
@@ -365,7 +426,7 @@ class GqlFetchLinear(GqlFetch):
         # print(query)
         return query
 
-    def get_issue_query(self, issue: str,
+    def get_issue_all_data_query(self, issue: str,
                         children_first: int = 50, children_after: Optional[str] = None,
                         inverse_relations_first: int = 50, inverse_relations_after: Optional[str] = None,
                         relations_first: int = 50, relations_after: Optional[str] = None,
@@ -440,11 +501,11 @@ class GqlFetchLinear(GqlFetch):
         """
         Get a list of teams without for one batch.
         """
-        query = self.get_team_query(first, after)
+        query = self.get_teams_query(first, after)
         data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
-    def get_teams(self, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+    def get_teams(self, first = 50, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
         """
         Get a list of teams, iterating over all pages.
         """
@@ -453,69 +514,104 @@ class GqlFetchLinear(GqlFetch):
         if limit is not None and limit < first:
           first = limit
         while True:
+            if limit is not None and limit < (first + len(teams)):
+                first = limit - len(teams)
+            if first < 1:
+                break
             data = self.get_teams_once(first, after, ignore_errors)
-            teams.extend(data.get('teams', {}).get('nodes', []))
-            # Linear does not have a totalCount, so just call with a count and -1
-            if progress_cb is not None:
-                progress_cb(len(teams), -1)
-            if not data['teams']['pageInfo']['hasNextPage']:
+            newteams = data.get('teams', {}).get('nodes', [])
+            teams.extend(newteams)
+            hasmore = data['teams']['pageInfo']['hasNextPage']
+            endCursor = data['teams']['pageInfo']['endCursor']
+            if not hasmore:
                 break
             if limit is not None and len(teams) >= limit:
-                break # TODO: Add a limit to the query
-            after = data['teams']['pageInfo']['endCursor']
-        return data.get('teams', {}).get('nodes', [])
+                break
+            after = endCursor
+        return teams
 
-    def get_team_issues_once(self, team: str, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+    def get_users_once(self, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+        """
+        Get a list of users without for one batch.
+        """
+        query = self.get_users_query(first, after)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
+        return data
+
+    def get_users(self, first = 50, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+        """
+        Get a list of users, iterating over all pages.
+        """
+        users = []
+        after = None
+        if limit is not None and limit < first:
+          first = limit
+        while True:
+            if limit is not None and limit < (first + len(users)):
+                first = limit - len(users)
+            if first < 1:
+                break
+            data = self.get_users_once(first, after, ignore_errors)
+            newusers = data.get('users', {}).get('nodes', [])
+            users.extend(newusers)
+            hasmore = data['users']['pageInfo']['hasNextPage']
+            endCursor = data['users']['pageInfo']['endCursor']
+            if not hasmore:
+                break
+            if limit is not None and len(users) >= limit:
+                break
+            after = endCursor
+        return users
+
+    def get_team_issues_once(self, team: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a team
         """
-        if issues is None:
-          issues = {}
-        query = self.get_issues_team_query(team, first, after)
-        data = self.fetch_data(query)
-        for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
-            issues[issue['identifier']] = issue
+        query = self.get_team_issues_query(team, first, after)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
-    def get_team_issues(self, team: str, issues: Mapping[str, Any] = None, first = 50, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+    def get_team_issues(self, team: str, first = 50, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
         """
         Get a list of Issues for a given Team.
 
         We build this as a dict of issues, keyed by issue id do that we can merge the data from get_issue_all_data() later.
         """
-        if issues is None:
-          issues = {}
+        issues = {}
         after = None
         if limit is not None and limit < first:
           first = limit
         while True:
-            data = self.get_team_issues_once(team, issues, first, after, ignore_errors)
-            for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
+            if limit is not None and limit < (first + len(issues)):
+                first = limit - len(issues)
+            if first < 1:
+                break
+            data = self.get_team_issues_once(team, first, after, ignore_errors)
+            newissues = data.get('team', {}).get('issues', {}).get('nodes', [])
+            for issue in newissues:
                 # Flag that we are incomplete so we can replace later instead of having to merge
                 issue["is_full"] = False
                 issues[issue['identifier']] = issue
-            if progress_cb is not None:
-                progress_cb(len(issues), -1)
-            if not data['team']['issues']['pageInfo']['hasNextPage']:
+            hasmore = data['team']['issues']['pageInfo']['hasNextPage']
+            endCursor = data['team']['issues']['pageInfo']['endCursor']
+            if not hasmore:
                 break
             if limit is not None and len(issues) >= limit:
                 break
-            after = data['team']['issues']['pageInfo']['endCursor']
+            after = endCursor
         return issues
 
-    def get_issues_once(self, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+    def get_issues_once(self, issues: Mapping[str, Any] = None, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> dict[str, Any]:
         """
         Get a list of Issues for a team
         """
         if issues is None:
           issues = {}
-        query = self.get_issues_group_query(first, after)
-        data = self.fetch_data(query)
-        for issue in data.get('team', {}).get('issues', {}).get('nodes', []):
-            issues[issue['identifier']] = issue
+        query = self.get_issues_query(first, after)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
-    def get_issues(self, issues: Mapping[str, Any] = None, first = 50, batch_cb: Optional[Callable[[Mapping[str, Any], str], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Mapping[str, Any]]:
+    def get_issues(self, first = 50, batch_cb: Optional[Callable[[Mapping[str, Any], str], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> Dict[str, Mapping[str, Any]]:
         """
         Get a list of Issues.
 
@@ -523,101 +619,110 @@ class GqlFetchLinear(GqlFetch):
 
         Note if batch_cb is provided, it will be called with the issues dict and the issue data.  In that case we will not build the issues dict.
         """
-        if issues is None:
-          issues = {}
-        # Reset the issues dict if we are using a batch callback
-        if batch_cb is not None:
-          issues = {}
+        issues = {}
+
         after = None
         if limit is not None and limit < first:
           first = limit
         while True:
-          data = self.get_issues_once(issues, first, after, ignore_errors)
-          for issue in data.get('issues', {}).get('nodes', []):
-              # Flag that we are incomplete so we can replace later instead of having to merge
-              issue["is_full"] = False
-              issues[issue['identifier']] = issue
-          if batch_cb is not None:
-              endCursor = data['issues']['pageInfo']['endCursor']
-              batch_cb(issues, endCursor)
-              # Reset the issues dict for the next batch if using the callback and/or so we return an empty dict
-              issues = {}
-          if not data['issues']['pageInfo']['hasNextPage']:
-              break
-          if limit is not None and len(issues) >= limit:
-              break
-          after = data['issues']['pageInfo']['endCursor']
+            if limit is not None and limit < (first + len(issues)):
+                first = limit - len(issues)
+            if first < 1:
+                break
+            data = self.get_issues_once(issues, first, after, ignore_errors)
+            # print(json.dumps(data, indent=4))
+            newissues = data.get('issues', {}).get('nodes', [])
+            for issue in newissues:
+                # Flag that we are incomplete so we can replace later instead of having to merge
+                issue["is_full"] = False
+                issues[issue['identifier']] = issue
+            hasmore = data['issues']['pageInfo']['hasNextPage']
+            endCursor = data['issues']['pageInfo']['endCursor']
+            if batch_cb is not None:
+                batch_cb(newissues, endCursor)
+                # Reset the issues dict for the next batch if using the callback and/or so we return an empty dict
+                issues = {}
+            if not hasmore:
+                break
+            if limit is not None and len(issues) >= limit:
+                break
+            after = endCursor
         return issues
 
 
-    def get_issue_all_data_once(self, issue: Mapping[str, Any],
+    def get_issue_all_data_once(self, issueid: str,
                                 children_first: int = 50, children_after: Optional[str] = None,
                                 inverse_relations_first: int = 50, inverse_relations_after: Optional[str] = None,
                                 relations_first: int = 50, relations_after: Optional[str] = None,
                                 history_first: int = 50, history_after: Optional[str] = None,
-                                ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+                                ignore_errors: bool = False) -> dict[str, Any]:
         """
         Get all data for a given Issue on a single iteration.
         """
-        query = self.get_issue_query(issue["identifier"],
+        query = self.get_issue_all_data_query(issueid,
                                       children_first = children_first, children_after = children_after,
                                       inverse_relations_first = inverse_relations_first, inverse_relations_after = inverse_relations_after,
                                       relations_first = relations_first, relations_after = relations_after,
                                       history_first = history_first, history_after = history_after
                                     )
 
-        data = self.fetch_data(query)
-        new_issue = data["issue"]
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
+        return data
 
-        # Append the new data to the existing issue
-        if len(new_issue["children"]["nodes"]) > 0:
-          self.replace_or_append_field(issue, "children", new_issue["children"], ["nodes"])
-        if len(new_issue["inverseRelations"]["nodes"]) > 0:
-          self.replace_or_append_field(issue, "inverseRelations", new_issue["inverseRelations"], ["nodes"] )
-        if len(new_issue["relations"]["nodes"]) > 0:
-          self.replace_or_append_field(issue, "relations", new_issue["relations"], ["nodes"])
-        if len(new_issue["history"]["nodes"]) > 0:
-          self.replace_or_append_field(issue, "history", new_issue["history"], ["nodes"])
-
-        return new_issue
-
-    def get_issue_all_data(self, issueid: str, progress_cb: Optional[Callable[[int, int], None]] = None, ignore_errors: bool = False) -> List[Mapping[str, Any]]:
+    def get_issue_all_data(self, issueid: str, ignore_errors: bool = False) -> dict[str, dict[str, Any]]:
         """
         Get all the data for a given Issue.
         """
-        issue = {}
-        issue["identifier"] = issueid
+        issue = None
         children_first = inverse_relations_first = relations_first = history_first = 50
         children_after = inverse_relations_after = relations_after = history_after = None
         while True:
             need_more = False
-            issue = self.get_issue_all_data_once(issue, ignore_errors = ignore_errors,
+            data = self.get_issue_all_data_once(issueid, ignore_errors = ignore_errors,
                                                 children_first = children_first, children_after = children_after,
                                                 inverse_relations_first = inverse_relations_first,
                                                 inverse_relations_after = inverse_relations_after,
                                                 relations_first = relations_first, relations_after = relations_after,
                                                 history_first = history_first, history_after = history_after)
+            newissue = data["issue"]
+            # if it is our first pass, just take the new issue
+            if issue is None:
+                issue = newissue
+            else:
+              # Append the new data to the existing issue
+              if len(newissue["children"]["nodes"]) > 0:
+                  self.replace_or_append_field(issue, "children", newissue["children"], ["nodes"])
+              if len(newissue["inverseRelations"]["nodes"]) > 0:
+                  self.replace_or_append_field(issue, "inverseRelations", newissue["inverseRelations"], ["nodes"])
+              if len(newissue["relations"]["nodes"]) > 0:
+                  self.replace_or_append_field(issue, "relations", newissue["relations"], ["nodes"])
+              if len(newissue["history"]["nodes"]) > 0:
+                  self.replace_or_append_field(issue, "history", newissue["history"], ["nodes"])
             # We have to check for multiple continuations but we can do them all at once
-            if children_first > 0 and issue.get('children', {}).get('pageInfo', {}).get('hasNextPage'):
-              children_after = issue.get('children', {}).get('pageInfo', {}).get('endCursor')
+            children_have_more = issue.get('children', {}).get('pageInfo', {}).get('hasNextPage')
+            children_after = issue.get('children', {}).get('pageInfo', {}).get('endCursor')
+            if children_first > 0 and children_have_more:
               need_more = True
             else:
               children_after = None
               children_first = 0
-            if inverse_relations_first > 0 and issue.get('inverseRelations', {}).get('pageInfo', {}).get('hasNextPage'):
-              inverse_relations_after = issue.get('inverseRelations', {}).get('pageInfo', {}).get('endCursor')
+            inverse_relations_have_more = issue.get('inverseRelations', {}).get('pageInfo', {}).get('hasNextPage')
+            inverse_relations_after = issue.get('inverseRelations', {}).get('pageInfo', {}).get('endCursor')
+            if inverse_relations_first > 0 and inverse_relations_have_more:
               need_more = True
             else:
               inverse_relations_after = None
               inverse_relations_first = 0
-            if relations_first > 0 and issue.get('relations', {}).get('pageInfo', {}).get('hasNextPage'):
-              relations_after = issue.get('relations', {}).get('pageInfo', {}).get('endCursor')
+            relations_have_more = issue.get('relations', {}).get('pageInfo', {}).get('hasNextPage')
+            relations_after = issue.get('relations', {}).get('pageInfo', {}).get('endCursor')
+            if relations_first > 0 and relations_have_more:
               need_more = True
             else:
               relations_after = None
               relations_first = 0
-            if history_first > 0 and issue.get('history', {}).get('pageInfo', {}).get('hasNextPage'):
-              history_after = issue.get('history', {}).get('pageInfo', {}).get('endCursor')
+            history_have_more = issue.get('history', {}).get('pageInfo', {}).get('hasNextPage')
+            history_after = issue.get('history', {}).get('pageInfo', {}).get('endCursor')
+            if history_first > 0 and history_have_more:
               need_more = True
             else:
               history_after = None

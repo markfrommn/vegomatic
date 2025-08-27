@@ -9,8 +9,8 @@ import sys
 import time
 #import dirtree
 from enum import Enum
-from typing import Mapping
-from vegomatic.datafile import dictionary_to_json_files
+from typing import List, Mapping, Any
+from vegomatic.datafile import dict_to_json_files
 import pandas as pd
 
 from argparse import ArgumentParser
@@ -41,6 +41,7 @@ class FetchType(Enum):
     ISSUE = 'issue'
     TEAM_ISSUES = 'teamissues'
     ALL_ISSUES = 'allissues'
+    USERS = 'users'
 
     def __str__(self):
         """Return string representation of the enum value."""
@@ -58,7 +59,7 @@ fetch_all_client = None
 fetch_all_throttle = 0
 fetch_all_max_batch = 1 # Set max batch > 0 to avoid /0 errors and other corner cases
 
-def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
+def fetch_issues_callback(issuelist: List[Mapping[str, Any]], endCursor: str) -> None:
     """
     Callback function for processing batches of issues during pagination.
 
@@ -72,7 +73,8 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
     global fetch_all_client
     global fetch_all_max_batch
 
-    batch_count = len(issues)
+    issues = {}
+    batch_count = len(issuelist)
     if batch_count > fetch_all_max_batch:
         fetch_all_max_batch = batch_count
     fetch_all_count += batch_count
@@ -82,20 +84,24 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
         print(f"Starting {batch_count} for {fetch_all_count} issues to {fetch_all_outdir} at cursor: {endCursor}...", end=status_endl)
     else:
         status_endl = "\r"
-    for issueid, issue in issues.items():
-        assert issueid == issue['identifier'], f"Issue ID mismatch: {issueid} != {issue['identifier']}"
-
+    for issue in issuelist:
+        issueid = issue['identifier']
         if fetch_all_fullissue:
-            issue = fetch_all_client.get_issue_all_data(issueid)
+            newissue = fetch_all_client.get_issue_all_data(issueid)
             print(".", end="", flush=True)
-            # Linear has a rate limit of 1500 requests per hour, so we sleep for 4 seconds per to be safe
-            time.sleep(2.7)
+            # Linear has a rate limit of 1500 requests per hour, so we sleep for 2.7 seconds per request to be safe
+            issue = newissue
+            time.sleep(.27)
         issue = GqlFetchLinear.clean_issue(issue)
         issues[issueid] = issue
 
+    if fetch_all_fullissue:
+        # Give a newline to finish the ....
+        print(".", flush=True)
+
     assert fetch_all_outdir is not None, 'fetch_all_outdir is not set'
 
-    dictionary_to_json_files(fetch_all_outdir, issues)
+    dict_to_json_files(fetch_all_outdir, issues)
     print(f"...Processed {batch_count} for {fetch_all_count} issues to {fetch_all_outdir} at cursor: {endCursor}...", end=status_endl)
     if fetch_all_throttle is not None and fetch_all_throttle > 0:
         # We need to throttle the requests to avoid rate limiting
@@ -108,7 +114,7 @@ def fetch_issues_callback(issues: Mapping[str, dict], endCursor: str) -> None:
         print(f"...throttling for {this_sleep} seconds.")
         time.sleep(this_sleep)
 
-def example_fetch_teams(linearclient: GqlFetchLinear) -> list[dict]:
+def linear_fetch_teams(linearclient: GqlFetchLinear, limit: int = None) -> list[dict]:
     """
     Example function to fetch all teams from Linear.
 
@@ -118,10 +124,23 @@ def example_fetch_teams(linearclient: GqlFetchLinear) -> list[dict]:
     Returns:
         list[dict]: List of team dictionaries
     """
-    teams = linearclient.get_teams()
+    teams = linearclient.get_teams(limit=limit)
     return teams
 
-def example_fetch_issue(linearclient: GqlFetchLinear, issueid: str) -> dict:
+def linear_fetch_users(linearclient: GqlFetchLinear, limit: int = None) -> list[dict]:
+    """
+    Example function to fetch all teams from Linear.
+
+    Args:
+        linearclient: The Linear GraphQL client instance
+
+    Returns:
+        list[dict]: List of team dictionaries
+    """
+    users = linearclient.get_users(limit=limit)
+    return users
+
+def linear_fetch_issue(linearclient: GqlFetchLinear, issueid: str) -> dict[str, any]:
     """
     Example function to fetch a single issue from Linear.
 
@@ -135,7 +154,7 @@ def example_fetch_issue(linearclient: GqlFetchLinear, issueid: str) -> dict:
     efissue = linearclient.get_issue_all_data(issueid)
     return efissue
 
-def example_fetch_team_issues(linearclient: GqlFetchLinear, team: str, limit: int = None) -> list[dict]:
+def linear_fetch_team_issues(linearclient: GqlFetchLinear, team: str, limit: int = None) -> dict[str, dict]:
     """
     Example function to fetch issues for a specific team from Linear.
 
@@ -150,7 +169,7 @@ def example_fetch_team_issues(linearclient: GqlFetchLinear, team: str, limit: in
     efissues = linearclient.get_team_issues(team, limit=limit)
     return efissues
 
-def example_fetch_issues(linearclient: GqlFetchLinear, limit: int = None) -> list[dict]:
+def linear_fetch_issues(linearclient: GqlFetchLinear, limit: int = None) -> dict[str, dict]:
     """
     Example function to fetch all issues from Linear.
 
@@ -161,10 +180,11 @@ def example_fetch_issues(linearclient: GqlFetchLinear, limit: int = None) -> lis
     Returns:
         list[dict]: List of issue dictionaries
     """
+
     issues = linearclient.get_issues(limit=limit)
     return issues
 
-def example_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False, throttle: float = 30) -> None:
+def linear_fetch_all_issues(linearclient: GqlFetchLinear, outdir: str = None, fullissue: bool = False, throttle: float = 30) -> None:
     """
     Example function to fetch all issues from Linear with batch processing.
 
@@ -212,6 +232,7 @@ if __name__ == "__main__":
     parser.add_argument('--format', type=OutputFormat, default=OutputFormat.TABLE, choices=list(OutputFormat))
     parser.add_argument('--outfile', type=str, default=None, help='Output file')
     parser.add_argument('--outdir', type=str, help='Output directory (used for dirtree)')
+    parser.add_argument('--first', type=int, default=50, help='Fetch N items at a time')
 
     # Query options
     parser.add_argument('--print-query', action='store_true', help='Print the query')
@@ -234,42 +255,76 @@ if __name__ == "__main__":
     if args.issue is not None:
         args.fetch = 'issue'
 
+    if args.limit is not None:
+        if args.limit < args.first:
+            args.first = args.limit
+
     client = GqlFetchLinear()
+
+    if args.print_query:
+        if args.fetch == FetchType.TEAMS:
+            query = client.get_teams_query(first=args.first)
+        elif args.fetch == FetchType.USERS:
+            query = client.get_users_query(first=args.first)
+        elif args.fetch == FetchType.ISSUES or args.fetch == FetchType.ALL_ISSUES:
+            query = client.get_issues_query(first=args.first)
+        elif args.fetch == FetchType.TEAM_ISSUES:
+            query = client.get_team_issues_query(team=args.team, first=args.first)
+        elif args.fetch == FetchType.ISSUE:
+            query = client.get_issue_all_data_query(issue=args.issue)
+        else:
+            print("Invalid fetch type")
+            exit(1)
+        print("Query:\n{}".format(query))
+        exit(0)
+
     client.connect()
+
+    if args.outfile:
+        outname = args.outfile
+        outfile = open(outname, 'w', encoding='utf-8')
+    else:
+        outfile = sys.stdout
+
 
     columns = None
     issue_columns = [ 'key', 'identifier', 'createdAt', 'startedAt', 'completedAt', 'title' ] #  'id', 'description', 'url']
+    user_columns = [ 'name', 'email', 'createdAt', 'displayName' ]
+    team_columns = [ 'name', 'identifier', 'createdAt' ]
+
     retval = None
 
     if args.fetch == FetchType.ALL_ISSUES:
         if args.outdir is None:
             parser.error('Cannot use --allissues without --outdir')
             sys.exit(1)
-        example_fetch_all_issues(client, args.outdir, args.fullissue)
+        linear_fetch_all_issues(client, args.outdir, args.fullissue)
         sys.exit(0)
     elif args.fetch == FetchType.TEAMS:
-        retval = example_fetch_teams(client)
+        retval = linear_fetch_teams(client, args.limit)
+        columns = team_columns
     elif args.fetch == FetchType.ISSUE:
-        issue = example_fetch_issue(client, args.issue)
+        issue = linear_fetch_issue(client, args.issue)
         retval = [ issue ]
         columns = issue_columns
     elif args.fetch == FetchType.TEAM_ISSUES:
-        retval1 = example_fetch_team_issues(client, args.team, args.limit)
-        retval = list(retval1.values())
+        retval = linear_fetch_team_issues(client, args.team, args.limit)
         columns = issue_columns
     elif args.fetch == FetchType.ISSUES:
-        retval1 = example_fetch_issues(client, args.limit)
-        retval2 = GqlFetchLinear.clean_issues(retval1)
-        retval = list(retval2.values())
+        retval1 = linear_fetch_issues(client, args.limit)
+        retval = GqlFetchLinear.clean_issues(retval1)
         columns = issue_columns
+    elif args.fetch == FetchType.USERS:
+        retval = linear_fetch_users(client, args.first)
+        columns = user_columns
     else:
         parser.error(f"Unknown fetch type: {args.fetch}")
         sys.exit(1)
 
     if args.fullissue:
         fullissues = {}
-        for issue in retval:
-            newissue = client.get_issue_all_data(issue['identifier'])
+        for issueid, issue in retval.items():
+            newissue = client.get_issue_all_data(issueid)
             newissue = GqlFetchLinear.clean_issue(newissue)
             fullissues[issue['identifier']] = newissue
         retval = fullissues
@@ -278,6 +333,7 @@ if __name__ == "__main__":
     if isinstance(retval, dict) and args.format not in [OutputFormat.JSON, OutputFormat.DIRTREE]:
         retval = list(retval.values())
 
+
     if args.format == OutputFormat.CSV or args.format == OutputFormat.TABLE:
         df = pd.DataFrame(retval)
         if columns is not None:
@@ -285,15 +341,15 @@ if __name__ == "__main__":
             df = df.loc[:, df.columns.isin(columns)]
 
     if args.format == OutputFormat.JSON:
-        print(json.dumps(retval, indent=4))
+        print(json.dumps(retval, indent=4), file=outfile)
     elif args.format == OutputFormat.CSV:
         if args.outfile is None:
             args.outfile = "/dev/stdout"
         df.to_csv(args.outfile, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
     elif args.format == OutputFormat.TABLE or args.format == OutputFormat.LIST:
-        print(df.to_string())
+        print(df.to_string(), file=outfile)
     elif args.format == OutputFormat.DIRTREE:
-        dictionary_to_json_files(args.outdir, retval)
+        dict_to_json_files(args.outdir, retval)
     else:
         print("Unknown format: ", args.format)
 
