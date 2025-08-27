@@ -18,12 +18,12 @@ class GqlFetchGithub(GqlFetch):
                     totalCount
                     nodes {
                         name
+                        id
+                        databaseId
                         url
                         description
                         createdAt
                         updatedAt
-                        id
-                        databaseId
                         diskUsage
                         isArchived
                         isDisabled
@@ -50,12 +50,41 @@ class GqlFetchGithub(GqlFetch):
         }
     """
 
+    # The base query for users in a Github Organization.
+    user_query_by_org = """
+        query {
+            organization(<ORG_ARGS>) {
+                membersWithRole(<MEMBER_ARGS>) {
+                    totalCount
+                    edges {
+                        node {
+                            id
+                            name
+                            login
+                            createdAt
+                            updatedAt
+                            databaseId
+                        }
+                        role
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+        """
     # The base query for repositories in a Github Organization.
     pr_query_by_repo = """
         query {
             repository(<REPO_ARGS>) {
                 name
                 url
+                owner {
+                    id
+                    login
+                }
                 pullRequests(<PR_ARGS>, orderBy: { field: CREATED_AT, direction: ASC }) {
                     totalCount
                     nodes {
@@ -71,6 +100,13 @@ class GqlFetchGithub(GqlFetch):
                         closedAt
                         lastEditedAt
                         merged
+                        repository {
+                            name
+                            owner {
+                                id
+                                login
+                            }
+                        }
                         mergedBy {
                             login
                         }
@@ -224,7 +260,7 @@ class GqlFetchGithub(GqlFetch):
         """
         super().close()
 
-    def get_repository_query(self, organization: str, first: int = 50, after: Optional[str] = None) -> str:
+    def get_org_repository_query(self, organization: str, first: int = 50, after: Optional[str] = None) -> str:
         """
         Get a query for a given Organization.
         """
@@ -244,33 +280,93 @@ class GqlFetchGithub(GqlFetch):
         query = query.replace("<REPO_ARGS>", repo_query_args)
         return query
 
-
     def get_repositories_once(self, organization: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
         """
         Get a list of repositories for a given Organization.
         """
-        query = self.get_repository_query(organization, first, after)
-        data = self.fetch_data(query)
+        query = self.get_org_repository_query(organization, first, after)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
     def get_repositories(self, organization: str, first = 50, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get a list of repositories for a given Organization.
         """
-        repositories = {}
+        repositorylist = []
         after = None
         if limit is not None and limit < first:
           first = limit
         while True:
             data = self.get_repositories_once(organization, first, after, ignore_errors)
-            for repo in data.get('organization', {}).get('repositories', {}).get('nodes', []):
-                repositories[repo['name']] = repo
-            if not data['organization']['repositories']['pageInfo']['hasNextPage']:
-                break
-            if limit is not None and len(repositories) >= limit:
-                break
+            newrepos = data.get('organization', {}).get('repositories', {}).get('nodes', [])
             after = data['organization']['repositories']['pageInfo']['endCursor']
+            hasmore = data['organization']['repositories']['pageInfo']['hasNextPage']
+            repositorylist.extend(newrepos)
+            # print(f"Fetched {len(newrepos)} of {len(repositorylist)} repositories for {organization}, got (hasNextPage={hasmore}, endCursor={after})", flush=True)
+            if not hasmore:
+                break
+            if limit is not None and len(repositorylist) >= limit:
+                break
+        repositories = {}
+        for repo in repositorylist:
+            repositories[repo['name']] = repo
         return repositories
+
+    def get_org_members_query(self, organization: str, first: int = 50, after: Optional[str] = None) -> str:
+        """
+        Get a query for a given Organization.
+        """
+        member_first_arg = member_after_arg = comma_arg = ""
+        query_owner_args = f'login: "{organization}"'
+
+        if (first is not None):
+            member_first_arg = f"first: {first}"
+        if (after is not None):
+            member_after_arg = f'after: "{after}"'
+        if member_first_arg != "" and member_after_arg != "":
+            comma_arg = ", "
+
+        member_query_args = f"{member_first_arg}{comma_arg}{member_after_arg}"
+        # We can't use format() here because the query is filled with curly braces
+        query = self.user_query_by_org.replace("<ORG_ARGS>", query_owner_args)
+        query = query.replace("<MEMBER_ARGS>", member_query_args)
+        return query
+
+    def get_org_members_once(self, organization: str, first: int = 50, after: Optional[str] = None, ignore_errors: bool = False) -> List[Dict[str, Any]]:
+        """
+        Get a list of repositories for a given Organization.
+        """
+        query = self.get_org_members_query(organization, first, after)
+        data = self.fetch_data(query, ignore_errors=ignore_errors)
+        return data
+
+    def get_org_members(self, organization: str, first = 50, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get a list of repositories for a given Organization.
+        """
+        memberlist = []
+        after = None
+        if limit is not None and limit < first:
+          first = limit
+        while True:
+            data = self.get_org_members_once(organization, first, after, ignore_errors)
+            newmembers = data.get('organization', {}).get('membersWithRole', {}).get('edges', [])
+            after = data['organization']['membersWithRole']['pageInfo']['endCursor']
+            hasmore = data['organization']['membersWithRole']['pageInfo']['hasNextPage']
+            memberlist.extend(newmembers)
+            print(f"Fetched {len(newmembers)} of {len(memberlist)} members for {organization}, got (hasNextPage={hasmore}, endCursor={after})", flush=True)
+            if not hasmore:
+                break
+            if limit is not None and len(memberlist) >= limit:
+                break
+
+        members = {}
+        for member1 in memberlist:
+                # We extract node from the edge to flatten the data
+                member = member1['node']
+                member['role'] = member1['role']
+                members[member['login']] = member
+        return members
 
     def get_pr_query(self, organization: str, repository: str, first: int = 50, after: Optional[str] = None) -> str:
         """
@@ -302,39 +398,44 @@ class GqlFetchGithub(GqlFetch):
         data = self.fetch_data(query, ignore_errors=ignore_errors)
         return data
 
-    def get_repo_prs(self, organization: str, repository: str, first = 50, batch_cb: Optional[Callable[[Mapping[str, Any], str, str, str], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_repo_prs(self, organization: str, repository: str, first = 50, batch_cb: Optional[Callable[[List[Mapping], str, str, str], None]] = None, ignore_errors: bool = False, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get a list of PRs for a given Repository.
         """
-        prs = {}
-        # Reset the issues dict if we are using a batch callback
-        if batch_cb is not None:
-          prs = {}
+        prlist = []
+
         after = None
         if limit is not None and limit < first:
           first = limit
         while True:
             data = self.get_repo_prs_once(organization, repository, first, after, ignore_errors)
+            prnew = data.get('repository', {}).get('pullRequests', {}).get('nodes', [])
+
             # Add keys for owner, repository and a fake PR-id
-            data['owner'] = data['repository']['owner']['login']
-            data['repository'] = data['repository']['name']
-            data['prid'] = f"{repository}-{str(data['number'])}"
-            for pr in data.get('repository', {}).get('pullRequests', {}).get('nodes', []):
+            owner = data['repository']['owner']['login']
+            repo = data['repository']['name']
+            for pr in prnew:
+                prid = f"{repository}-{str(pr['number'])}"
                 prname = self.pr_permalink_to_name(pr['permalink'])
-                prs[prname] = pr.copy()
-                prs[prname]['owner'] = data['owner']
-                prs[prname]['repository'] = data['repository']
-                prs[prname]['id'] = prname
+                pr['owner'] = owner
+                pr['repository'] = repo
+                pr['pr_id'] = prid
+                pr['name'] = prname
+                prlist.append(pr)
+            endCursor = data['repository']['pullRequests']['pageInfo']['endCursor']
+            hasmore = data['repository']['pullRequests']['pageInfo']['hasNextPage']
             if batch_cb is not None:
-                endCursor = data['repository']['pullRequests']['pageInfo']['endCursor']
-                batch_cb(prs, organization, repository, endCursor)
-                # Reset the prs dict for the next batch if using the callback and/or so we return an empty dict
-                prs = {}
-            if not data['repository']['pullRequests']['pageInfo']['hasNextPage']:
+                batch_cb(prnew, owner, repo, endCursor)
+            else:
+                prlist.extend(prnew)
+            if not hasmore:
                 break
-            if limit is not None and len(prs) >= limit:
+            if limit is not None and len(prlist) >= limit:
                 break
-            after = data['repository']['pullRequests']['pageInfo']['endCursor']
+            after = endCursor
+        prs = {}
+        for pr in prlist:
+            prs[pr['pr_id']] = pr
         return prs
 
 

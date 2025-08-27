@@ -10,7 +10,7 @@ import json
 import pprint
 import sys
 import os
-from typing import Mapping
+from typing import Mapping, List
 import pandas as pd
 import time
 
@@ -49,6 +49,7 @@ class FetchType(Enum):
     REPO_PRS = 'repoprs'
     ALL_PRS = 'allprs'
     PR = 'pr'
+    MEMBERS = 'members'
 
     def __str__(self):
         """Return string representation of the enum value."""
@@ -77,7 +78,7 @@ def pretty_print(clas, indent=0):
         else:
             print(' ' * indent + k + ': ' + str(v))
 
-def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, endCursor: str) -> None:
+def fetch_prs_callback(prbatch: List[Mapping], prorg: str, prrepo: str, endCursor: str) -> None:
     """
     Callback function for processing batches of pull requests during pagination.
 
@@ -93,22 +94,23 @@ def fetch_prs_callback(prbatch: Mapping[str, dict], prorg: str, prrepo: str, end
     global fetch_all_max_batch
 
     batch_count = len(prbatch)
+    prdict = {}
     # Cheat and derive our baseline batch size from the largest batch we have seen so far
     if batch_count > fetch_all_max_batch:
         fetch_all_max_batch = batch_count
     fetch_all_count += batch_count
 
     status_endl = "\r"
-    for prname, apr in prbatch.items():
-        apr = GqlFetchGithub.clean_pr(apr)
-        prbatch[prname] = apr
+    for pr in prbatch:
+        pr = GqlFetchGithub.clean_pr(pr)
+        prdict[pr['pr_id']] = pr
 
     # We need an outdir to save the PRs
     assert fetch_all_outdir is not None, 'fetch_all_outdir is not set'
 
     real_outdir = os.path.join(fetch_all_outdir, prorg, prrepo)
 
-    dictionary_to_json_files(real_outdir, prbatch)
+    dictionary_to_json_files(real_outdir, prdict)
     print(f"...Processed {batch_count} for {fetch_all_count} PRs to {real_outdir} at cursor: {endCursor}...", end=status_endl)
     if fetch_all_throttle is not None and fetch_all_throttle > 0:
         # We need to throttle the requests to avoid rate limiting
@@ -160,20 +162,20 @@ def github_fetch_all_prs(ghclient: GqlFetchGithub, prorg: str, outdir: str = Non
 if __name__ == "__main__":
     parser = ArgumentParser(description='Github Data Fetch')
     # What to fetch
-    parser.add_argument('--fetch', type=FetchType, default=FetchType.REPOS, choices=list(FetchType), help='What to fetch (repos, repoprs, allprs, pr)')
+    parser.add_argument('--fetch', type=FetchType, default=FetchType.REPOS, choices=list(FetchType), help='What to fetch (repos, repoprs, allprs, pr, members)')
     parser.add_argument('--pr', type=str, default=None, help='SinglePR to fetch')
     parser.add_argument('--organization', type=str, required=True, help='Organization to fetch from')
     parser.add_argument('--repository', type=str, help='Repository to fetch')
 
     # Output format
     parser.add_argument('--format', type=OutputFormat, default=OutputFormat.TABLE, choices=list(OutputFormat))
-    parser.add_argument('--output', type=str, default=None, help='Output file')
+    parser.add_argument('--outfile', type=str, default=None, help='Output file')
     parser.add_argument('--outdir', type=str, help='Save to a directory (used for dirtree)')
 
     # Query options
     parser.add_argument('--print-query', action='store_true', help='Print the query')
     parser.add_argument('--ignore-errors', action='store_true', help='Ignore errors')
-    parser.add_argument('--limit', type=int, default=100, help='Stop when at least this many items have been fetched')
+    parser.add_argument('--limit', type=int, default=None, help='Stop when at least this many items have been fetched')
 
     # Misc options
     parser.add_argument('--throttle', type=float, default=3.0, help='Per-batch throttle in seconds')
@@ -207,6 +209,8 @@ if __name__ == "__main__":
                 args.outdir = "allprs"
             elif args.fetch == FetchType.PR:
                 args.outdir = "pr"
+            elif args.fetch == FetchType.MEMBERS:
+                args.outdir = "members"
             else:
                 parser.error(f"Cannot use --dirtree with Unknown type {args.fetch}")
                 sys.exit(1)
@@ -220,12 +224,14 @@ if __name__ == "__main__":
             if args.limit < first:
                 first = args.limit
         if args.fetch == FetchType.REPOS:
-            query = client.get_repository_query(organization=args.organization, first=first)
+            query = client.get_org_repository_query(organization=args.organization, first=first)
         elif args.fetch == FetchType.REPO_PRS:
             query = client.get_pr_query(organization=args.organization, repository=args.repository, first=first)
         elif args.fetch == FetchType.ALL_PRS:
             parser.error('Cannot print query for all PRs - Not implemented')
             sys.exit()
+        elif args.fetch == FetchType.MEMBERS:
+            query = client.get_org_members_query(organization=args.organization, first=first)
         elif args.fetch == FetchType.PR:
             parser.error('Cannot print query for a single PR - Not implemented')
             sys.exit(1)
@@ -235,9 +241,9 @@ if __name__ == "__main__":
         print("Query:\n{}".format(query))
         exit(0)
 
-    if args.output:
-        outname = args.output
-        outfile = open(outname, 'w')
+    if args.outfile:
+        outname = args.outfile
+        outfile = open(outname, 'w', encoding='utf-8')
     else:
         outfile = sys.stdout
 
@@ -246,6 +252,7 @@ if __name__ == "__main__":
     columns = None
     repo_columns = [ 'name', 'createdAt', 'updatedAt', 'description' ]
     pr_columns = [ 'number', 'state', 'createdAt', 'mergedAt', 'closedAt', 'title' ]
+    member_columns = [ 'name', 'login', 'createdAt', 'databaseId' ]
     retval = None
 
     if args.fetch == FetchType.ALL_PRS:
@@ -254,6 +261,9 @@ if __name__ == "__main__":
             sys.exit(1)
         github_fetch_all_prs(client, args.organization, args.outdir, args.throttle)
         sys.exit(0)
+    elif args.fetch == FetchType.MEMBERS:
+        retval = client.get_org_members(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
+        columns = member_columns
     elif args.fetch == FetchType.REPOS:
         retval = client.get_repositories(organization=args.organization, ignore_errors=args.ignore_errors, limit=args.limit)
         columns = repo_columns
@@ -285,13 +295,13 @@ if __name__ == "__main__":
             df = df.loc[:, df.columns.isin(columns)]
 
     if args.format == OutputFormat.JSON:
-        print(json.dumps(retval, indent=4))
+        print(json.dumps(retval, indent=4), file=outfile)
     elif args.format == OutputFormat.CSV:
-        if args.output is None:
-            args.output = "/dev/stdout"
-        df.to_csv(args.output, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
+        if args.outfile is None:
+            args.outfile = "/dev/stdout"
+        df.to_csv(args.outfile, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
     elif args.format == OutputFormat.TABLE or args.format == OutputFormat.LIST:
-        print(df.to_string())
+        print(df.to_string(),file=outfile)
     elif args.format == OutputFormat.DIRTREE:
         dictionary_to_json_files(args.outdir, retval)
     else:

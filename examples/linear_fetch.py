@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     # Output format
     parser.add_argument('--format', type=OutputFormat, default=OutputFormat.TABLE, choices=list(OutputFormat))
-    parser.add_argument('--output', type=str, default=None, help='Output file')
+    parser.add_argument('--outfile', type=str, default=None, help='Output file')
     parser.add_argument('--outdir', type=str, help='Output directory (used for dirtree)')
 
     # Query options
@@ -287,9 +287,9 @@ if __name__ == "__main__":
     if args.format == OutputFormat.JSON:
         print(json.dumps(retval, indent=4))
     elif args.format == OutputFormat.CSV:
-        if args.output is None:
-            args.output = "/dev/stdout"
-        df.to_csv(args.output, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
+        if args.outfile is None:
+            args.outfile = "/dev/stdout"
+        df.to_csv(args.outfile, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
     elif args.format == OutputFormat.TABLE or args.format == OutputFormat.LIST:
         print(df.to_string())
     elif args.format == OutputFormat.DIRTREE:
