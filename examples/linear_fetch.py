@@ -64,7 +64,7 @@ def fetch_issues_callback(issuelist: List[Mapping[str, Any]], endCursor: str) ->
     Callback function for processing batches of issues during pagination.
 
     Args:
-        issues: Dictionary mapping issue IDs to issue data
+        issues: Dictionary mapping issue IDs to issue data@
         endCursor: The cursor position after this batch
     """
     global fetch_all_outdir
