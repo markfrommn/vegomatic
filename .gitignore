@@ -259,6 +259,10 @@ __marimo__/
 .idea/**/dictionaries
 .idea/**/shelf
 
+# Copilot Stuff
+.idea/copilot.data.migration**
+
+
 # AWS User-specific
 .idea/**/aws.xml
 
